@@ -95,3 +95,6 @@ namespace pnq
         mutable std::atomic<int> m_refCount;
     };
 } // namespace pnq
+
+#define PNQ_ADDREF(p) do { if (p) (p)->retain(REFCOUNT_DEBUG_ARGS); } while(0)
+#define PNQ_RELEASE(p) do { if (p) (p)->release(REFCOUNT_DEBUG_ARGS); } while(0)

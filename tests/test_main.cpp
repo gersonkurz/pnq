@@ -1529,3 +1529,186 @@ TEST_CASE("registry::regfile_parser", "[registry]") {
         REQUIRE_FALSE(parser.parse_text(content));
     }
 }
+
+TEST_CASE("registry::importer", "[registry]") {
+    using namespace pnq::registry;
+
+    SECTION("format4 importer") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Test]\r\n"
+            "\"StringValue\"=\"Hello\"\r\n"
+            "\"DwordValue\"=dword:0000002a\r\n"
+            "\r\n";
+
+        regfile_format4_importer importer(content);
+        key_entry* result = importer.import();
+        REQUIRE(result != nullptr);
+        REQUIRE(result->get_path() == "HKEY_LOCAL_MACHINE\\SOFTWARE\\Test");
+
+        auto it = result->values().find("stringvalue");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "Hello");
+
+        it = result->values().find("dwordvalue");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_dword() == 42);
+
+        result->release();
+    }
+
+    SECTION("format5 importer") {
+        const char* content =
+            "Windows Registry Editor Version 5.00\r\n"
+            "\r\n"
+            "[HKEY_CURRENT_USER\\Software\\Test]\r\n"
+            "@=\"Default\"\r\n"
+            "\"Name\"=\"Value\"\r\n"
+            "\r\n";
+
+        regfile_format5_importer importer(content);
+        key_entry* result = importer.import();
+        REQUIRE(result != nullptr);
+        REQUIRE(result->default_value()->get_string() == "Default");
+
+        result->release();
+    }
+
+    SECTION("importer caches result") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n"
+            "\"Val\"=\"Test\"\r\n";
+
+        regfile_format4_importer importer(content);
+        key_entry* result1 = importer.import();
+        key_entry* result2 = importer.import();
+
+        // Should be same object, but with refcount incremented
+        REQUIRE(result1 == result2);
+
+        result1->release();
+        result2->release();
+    }
+
+    SECTION("create_importer_from_string auto-detects format4") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n";
+
+        auto importer = create_importer_from_string(content);
+        REQUIRE(importer != nullptr);
+
+        key_entry* result = importer->import();
+        REQUIRE(result != nullptr);
+        result->release();
+    }
+
+    SECTION("create_importer_from_string auto-detects format5") {
+        const char* content =
+            "Windows Registry Editor Version 5.00\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n";
+
+        auto importer = create_importer_from_string(content);
+        REQUIRE(importer != nullptr);
+
+        key_entry* result = importer->import();
+        REQUIRE(result != nullptr);
+        result->release();
+    }
+
+    SECTION("create_importer_from_string handles UTF-8 BOM") {
+        std::string content = "\xEF\xBB\xBF"  // UTF-8 BOM
+            "Windows Registry Editor Version 5.00\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n";
+
+        auto importer = create_importer_from_string(content);
+        REQUIRE(importer != nullptr);
+
+        key_entry* result = importer->import();
+        REQUIRE(result != nullptr);
+        result->release();
+    }
+
+    SECTION("create_importer_from_string returns null for unknown format") {
+        auto importer = create_importer_from_string("Not a valid header");
+        REQUIRE(importer == nullptr);
+    }
+
+    SECTION("registry_importer reads live registry") {
+        // Create a simple test key first
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_reg_importer_test_" + std::to_string(GetCurrentProcessId());
+
+        key test_key(test_path);
+        REQUIRE(test_key.open_for_writing());
+        test_key.set_string("TestVal", "TestData");
+        test_key.close();
+
+        // Now import it
+        registry_importer importer(test_path);
+        key_entry* result = importer.import();
+        REQUIRE(result != nullptr);
+
+        auto it = result->values().find("testval");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "TestData");
+
+        result->release();
+        key::delete_recursive(test_path);
+    }
+
+    SECTION("registry_importer handles non-existent key") {
+        registry_importer importer("HKEY_LOCAL_MACHINE\\SOFTWARE\\ThisDoesNotExist_12345");
+        key_entry* result = importer.import();
+        REQUIRE(result != nullptr);  // Returns empty tree, not null
+
+        // Should be empty
+        REQUIRE_FALSE(result->has_values());
+        REQUIRE_FALSE(result->has_keys());
+
+        result->release();
+    }
+
+    SECTION("registry_importer reads subkeys recursively") {
+        // Use our test key
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_importer_test_" + std::to_string(GetCurrentProcessId());
+
+        // Create test structure
+        key parent(test_path);
+        REQUIRE(parent.open_for_writing());
+        parent.set_string("ParentVal", "parent");
+
+        key child(test_path + "\\Child");
+        REQUIRE(child.open_for_writing());
+        child.set_string("ChildVal", "child");
+
+        child.close();
+        parent.close();
+
+        // Now import
+        registry_importer importer(test_path);
+        key_entry* result = importer.import();
+        REQUIRE(result != nullptr);
+
+        // Check parent value
+        auto it = result->values().find("parentval");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "parent");
+
+        // Check child key exists
+        REQUIRE(result->has_keys());
+        auto kit = result->keys().find("child");
+        REQUIRE(kit != result->keys().end());
+
+        // Check child value
+        it = kit->second->values().find("childval");
+        REQUIRE(it != kit->second->values().end());
+        REQUIRE(it->second->get_string() == "child");
+
+        result->release();
+
+        // Clean up
+        key::delete_recursive(test_path);
+    }
+}
