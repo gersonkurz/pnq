@@ -277,7 +277,7 @@ namespace pnq
         // Format-Specific Exporters
         // =====================================================================
 
-        /// Exporter for REGEDIT4 format .REG files (ANSI encoding).
+        /// Exporter for REGEDIT4 format .REG files (ANSI/CP_ACP encoding).
         class regfile_format4_exporter final : public regfile_exporter
         {
         public:
@@ -289,8 +289,8 @@ namespace pnq
         protected:
             bool write_file() const override
             {
-                // REGEDIT4 uses ANSI encoding (no BOM)
-                return text_file::write_utf8(m_filename, m_result, false);
+                // REGEDIT4 uses system ANSI codepage (CP_ACP), no BOM
+                return text_file::write_ansi(m_filename, m_result);
             }
         };
 

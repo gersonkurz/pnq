@@ -55,6 +55,22 @@ namespace pnq
             return output.write(text);
         }
 
+        /// Create an ANSI (system codepage) encoded text file.
+        /// @param filename name of the text file to create
+        /// @param text UTF-8 text to convert and write
+        /// @return true on success, false on failure
+        inline bool write_ansi(std::string_view filename, std::string_view text)
+        {
+            BinaryFile output;
+            if (!output.create_for_writing(filename))
+                return false;
+
+            // Convert UTF-8 -> UTF-16 -> CP_ACP
+            std::wstring wide = string::encode_as_utf16(text);
+            std::string ansi = string::encode_to_codepage(wide, CP_ACP);
+            return output.write(std::string_view{ansi});
+        }
+
         /// Create a UTF-16LE encoded text file, optionally including a BOM.
         /// @param filename name of the text file to create
         /// @param text UTF-16 text to write

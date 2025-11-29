@@ -238,6 +238,44 @@ namespace pnq
             return result;
         }
 
+        /// UTF-16 to target codepage conversion using Windows API.
+        /// @param string_to_encode the UTF-16 string to encode
+        /// @param codepage target codepage (e.g., CP_ACP for system ANSI)
+        /// @return the encoded string in the target codepage
+        inline std::string encode_to_codepage(std::wstring_view string_to_encode, UINT codepage)
+        {
+            if (string_to_encode.empty())
+                return {};
+
+            const int required_size =
+                WideCharToMultiByte(codepage, 0, string_to_encode.data(), static_cast<int>(string_to_encode.size()), nullptr, 0, nullptr, nullptr);
+
+            if (required_size <= 0)
+                return {};
+
+            constexpr size_t stack_buffer_size{1024};
+            if (required_size < stack_buffer_size)
+            {
+                char stack_buffer[stack_buffer_size];
+                const int rc = WideCharToMultiByte(
+                    codepage, 0, string_to_encode.data(), static_cast<int>(string_to_encode.size()), stack_buffer, required_size, nullptr, nullptr);
+
+                if (rc > 0)
+                {
+                    return std::string(stack_buffer, rc);
+                }
+            }
+
+            std::string result(required_size, '\0');
+            const int rc = WideCharToMultiByte(
+                codepage, 0, string_to_encode.data(), static_cast<int>(string_to_encode.size()), result.data(), required_size, nullptr, nullptr);
+
+            if (rc <= 0)
+                return {};
+
+            return result;
+        }
+
         /// UTF-8 (or other codepage) to UTF-16 conversion using Windows API.
         inline std::wstring encode_as_utf16(std::string_view utf8_encoded_text, UINT codepage = CP_UTF8)
         {
