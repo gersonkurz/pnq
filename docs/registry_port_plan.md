@@ -261,7 +261,7 @@ pnq/registry.h                    <- Main include, pulls everything in order
 ## Progress Tracking
 
 - [x] Milestone 1: Foundation Types (types.h, value.h) - DONE
-- [ ] Milestone 2: Key Entry
+- [x] Milestone 2: Key Entry (key_entry.h) - DONE
 - [ ] Milestone 3: Live Registry Access
 - [ ] Milestone 4: Parser Infrastructure
 - [ ] Milestone 5: Import

@@ -1083,3 +1083,155 @@ TEST_CASE("registry::value basics", "[registry]") {
         REQUIRE(v.get_string() == "Héllo Wörld 日本語");
     }
 }
+
+TEST_CASE("registry::key_entry basics", "[registry]") {
+    using pnq::registry::key_entry;
+    using pnq::registry::value;
+
+    SECTION("default constructor creates root") {
+        key_entry* root = PNQ_NEW key_entry();
+        REQUIRE(root->name().empty());
+        REQUIRE(root->parent() == nullptr);
+        REQUIRE(root->get_path().empty());
+        root->release();
+    }
+
+    SECTION("named key with parent") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* child = PNQ_NEW key_entry(root, "Software");
+
+        REQUIRE(child->name() == "Software");
+        REQUIRE(child->parent() == root);
+        REQUIRE(child->get_path() == "Software");
+
+        child->release();
+        root->release();
+    }
+
+    SECTION("find_or_create_key creates hierarchy") {
+        key_entry* root = PNQ_NEW key_entry();
+
+        key_entry* deep = root->find_or_create_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\MyApp\\Settings");
+
+        REQUIRE(deep->name() == "Settings");
+        REQUIRE(deep->get_path() == "HKEY_LOCAL_MACHINE\\SOFTWARE\\MyApp\\Settings");
+
+        // Same path returns same key
+        key_entry* same = root->find_or_create_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\MyApp\\Settings");
+        REQUIRE(same == deep);
+
+        // Case-insensitive lookup
+        key_entry* also_same = root->find_or_create_key("hkey_local_machine\\software\\myapp\\settings");
+        REQUIRE(also_same == deep);
+
+        root->release();
+    }
+
+    SECTION("find_or_create_key with remove flag") {
+        key_entry* root = PNQ_NEW key_entry();
+
+        key_entry* removed = root->find_or_create_key("-HKEY_CURRENT_USER\\DeleteMe");
+
+        REQUIRE(removed->remove_flag() == true);
+        REQUIRE(removed->name() == "DeleteMe");
+
+        root->release();
+    }
+
+    SECTION("find_or_create_value") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* key = root->find_or_create_key("TestKey");
+
+        // Named value
+        value* v1 = key->find_or_create_value("TestValue");
+        REQUIRE(v1->name() == "TestValue");
+        REQUIRE_FALSE(v1->is_default_value());
+
+        // Same value returned on second call
+        value* v1_again = key->find_or_create_value("TestValue");
+        REQUIRE(v1 == v1_again);
+
+        // Case-insensitive
+        value* v1_case = key->find_or_create_value("testvalue");
+        REQUIRE(v1 == v1_case);
+
+        // Default value
+        value* def = key->find_or_create_value("");
+        REQUIRE(def->is_default_value());
+        REQUIRE(key->default_value() == def);
+
+        root->release();
+    }
+
+    SECTION("clone creates deep copy") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* orig = root->find_or_create_key("Original\\Subkey");
+
+        value* v = orig->find_or_create_value("MyValue");
+        v->set_dword(42);
+
+        key_entry* cloned = orig->clone(nullptr);
+
+        // Clone is independent
+        REQUIRE(cloned->name() == "Subkey");
+        REQUIRE(cloned->parent() == nullptr);  // we passed nullptr as parent
+
+        // Values are copied
+        REQUIRE(cloned->values().size() == 1);
+        auto it = cloned->values().find("myvalue");
+        REQUIRE(it != cloned->values().end());
+        REQUIRE(it->second->get_dword() == 42);
+
+        // Modifying clone doesn't affect original
+        it->second->set_dword(100);
+        REQUIRE(v->get_dword() == 42);
+
+        cloned->release();
+        root->release();
+    }
+
+    SECTION("has_values and has_keys") {
+        key_entry* root = PNQ_NEW key_entry();
+
+        REQUIRE_FALSE(root->has_values());
+        REQUIRE_FALSE(root->has_keys());
+
+        root->find_or_create_key("Child");
+        REQUIRE(root->has_keys());
+        REQUIRE_FALSE(root->has_values());
+
+        key_entry* child = root->find_or_create_key("Child");
+        child->find_or_create_value("Val");
+        REQUIRE(child->has_values());
+
+        root->release();
+    }
+
+    SECTION("ask_to_add_value and ask_to_remove_value") {
+        key_entry* source = PNQ_NEW key_entry();
+        key_entry* src_key = source->find_or_create_key("Source\\Key");
+        value* src_val = src_key->find_or_create_value("MyVal");
+        src_val->set_string("hello");
+
+        key_entry* diff = PNQ_NEW key_entry();
+
+        // Add value
+        diff->ask_to_add_value(src_key, src_val);
+
+        key_entry* diff_key = diff->find_or_create_key("Source\\Key");
+        REQUIRE(diff_key->values().size() == 1);
+        REQUIRE(diff_key->values().at("myval")->get_string() == "hello");
+        REQUIRE_FALSE(diff_key->values().at("myval")->remove_flag());
+
+        // Remove value
+        key_entry* diff2 = PNQ_NEW key_entry();
+        diff2->ask_to_remove_value(src_key, src_val);
+
+        key_entry* diff2_key = diff2->find_or_create_key("Source\\Key");
+        REQUIRE(diff2_key->values().at("myval")->remove_flag());
+
+        diff2->release();
+        diff->release();
+        source->release();
+    }
+}
