@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pnq/pnq.h>
+#include <pnq/registry.h>
 
 TEST_CASE("Version is defined", "[version]") {
     REQUIRE(pnq::version_major == 0);
@@ -983,5 +984,102 @@ TEST_CASE("wstring::equals_nocase", "[wstring]") {
     SECTION("different lengths") {
         REQUIRE_FALSE(equals_nocase(L"hello", L"hello!"));
         REQUIRE_FALSE(equals_nocase(L"hello!", L"hello"));
+    }
+}
+
+// =============================================================================
+// registry::value tests
+// =============================================================================
+
+TEST_CASE("registry::value basics", "[registry]") {
+    using pnq::registry::value;
+
+    SECTION("default constructor") {
+        value v;
+        REQUIRE(v.is_default_value());
+        REQUIRE(v.type() == pnq::registry::REG_TYPE_UNKNOWN);
+        REQUIRE_FALSE(v.remove_flag());
+    }
+
+    SECTION("named value") {
+        value v("TestValue");
+        REQUIRE_FALSE(v.is_default_value());
+        REQUIRE(v.name() == "TestValue");
+    }
+
+    SECTION("set/get DWORD") {
+        value v("DwordVal");
+        v.set_dword(0x12345678);
+        REQUIRE(v.type() == REG_DWORD);
+        REQUIRE(v.get_dword() == 0x12345678);
+        REQUIRE(v.get_dword(99) == 0x12345678);
+    }
+
+    SECTION("get DWORD with wrong type returns default") {
+        value v("StringVal");
+        v.set_string("hello");
+        REQUIRE(v.get_dword(42) == 42);
+    }
+
+    SECTION("set/get QWORD") {
+        value v("QwordVal");
+        v.set_qword(0x123456789ABCDEF0ULL);
+        REQUIRE(v.type() == REG_QWORD);
+        REQUIRE(v.get_qword() == 0x123456789ABCDEF0ULL);
+    }
+
+    SECTION("set/get string") {
+        value v("StringVal");
+        v.set_string("Hello World");
+        REQUIRE(v.type() == REG_SZ);
+        REQUIRE(v.get_string() == "Hello World");
+    }
+
+    SECTION("set/get expanded string") {
+        value v("ExpandVal");
+        v.set_expanded_string("%WINDIR%\\system32");
+        REQUIRE(v.type() == REG_EXPAND_SZ);
+        REQUIRE(v.get_string() == "%WINDIR%\\system32");
+    }
+
+    SECTION("set/get multi-string") {
+        value v("MultiVal");
+        std::vector<std::string> strings{"one", "two", "three"};
+        v.set_multi_string(strings);
+        REQUIRE(v.type() == REG_MULTI_SZ);
+
+        auto result = v.get_multi_string();
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[0] == "one");
+        REQUIRE(result[1] == "two");
+        REQUIRE(result[2] == "three");
+    }
+
+    SECTION("set none") {
+        value v("NoneVal");
+        v.set_none();
+        REQUIRE(v.type() == REG_NONE);
+        REQUIRE(v.get_binary().empty());
+    }
+
+    SECTION("remove flag") {
+        value v("ToRemove");
+        REQUIRE_FALSE(v.remove_flag());
+        v.set_remove_flag(true);
+        REQUIRE(v.remove_flag());
+    }
+
+    SECTION("copy constructor") {
+        value v1("Original");
+        v1.set_dword(100);
+        value v2(v1);
+        REQUIRE(v2.name() == "Original");
+        REQUIRE(v2.get_dword() == 100);
+    }
+
+    SECTION("unicode string") {
+        value v("UnicodeVal");
+        v.set_string("Héllo Wörld 日本語");
+        REQUIRE(v.get_string() == "Héllo Wörld 日本語");
     }
 }
