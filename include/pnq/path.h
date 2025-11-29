@@ -6,6 +6,7 @@
 
 #include <pnq/string.h>
 #include <pnq/wstring.h>
+#include <pnq/environment_variables.h>
 #include <pnq/directory.h>
 #include <pnq/console.h>
 #include <pnq/file.h>
@@ -142,7 +143,7 @@ namespace pnq
             }
             return false;
         }
-        
+
         inline bool locate_in_directory(std::string_view directory, std::string_view filename, std::string &result, bool is_executable)
         {
             if (string::is_empty(directory))
@@ -155,7 +156,7 @@ namespace pnq
             result = temp;
             return true;
         }
-        
+
         inline bool find_filename(std::string_view name, std::string &result, bool is_executable)
         {
             if (file::exists(name))
@@ -194,6 +195,32 @@ namespace pnq
                 return find_filename(combined_filename, result, true);
             }
             return find_filename(name, result, true);
+        }
+
+        inline std::filesystem::path get_roaming_app_data()
+        {
+            // Get ROAMINGAPPDATA path
+            PWSTR roamingAppDataPath = nullptr;
+            HRESULT hr = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roamingAppDataPath);
+            if (FAILED(hr))
+            {
+                return {};
+            }
+
+            const std::wstring wpath{roamingAppDataPath};
+            CoTaskMemFree(roamingAppDataPath);
+
+            // Convert to UTF-8 and append pserv5 folder
+            const std::string appDataPath = string::encode_as_utf8(wpath);
+            const std::filesystem::path path = std::filesystem::path(appDataPath) / "pserv5";
+
+            // Create directory if it doesn't exist
+            if (!std::filesystem::exists(path))
+            {
+                std::filesystem::create_directories(path);
+            }
+
+            return path;
         }
     } // namespace path
 } // namespace pnq

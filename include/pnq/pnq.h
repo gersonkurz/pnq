@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <source_location>
 #include <tchar.h>
 #include <time.h>
 #include <unordered_map>
@@ -66,6 +67,7 @@ namespace pnq
 }
 
 
+#include <pnq/app_init.h>
 #include <pnq/binary_file.h>
 #include <pnq/console.h>
 #include <pnq/directory.h>
@@ -87,5 +89,12 @@ namespace pnq
 #include <pnq/win32/handle.h>
 #include <pnq/win32/security_attributes.h>
 #include <pnq/win32/wstr_param.h>
+
+#include <pnq/config/config_backend.h>
+#include <pnq/config/section.h>
+#include <pnq/config/toml_backend.h>
+#include <pnq/config/typed_value.h>
+#include <pnq/config/typed_vector_value.h>
+#include <pnq/config/value_interface.h>
 
 namespace fs = std::filesystem;
