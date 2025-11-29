@@ -1,41 +1,22 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 namespace pnq
 {
     namespace wstring
     {
-        /// compare two wide strings, ignoring case
-        /// @param string_a first string
-        /// @param string_b second string
-        /// @return true if they are equal or false if they are not
-        inline bool equals_nocase(std::wstring_view string_a, std::wstring_view string_b)
+        // No equals() - use operator== on std::wstring_view directly
+
+        /// Compare two wide strings, ignoring case.
+        /// @param a first string
+        /// @param b second string
+        /// @return true if equal (case-insensitive), false otherwise
+        inline bool equals_nocase(std::wstring_view a, std::wstring_view b)
         {
-            if (string_a.empty())
-                return string_b.empty();
-
-            if (string_b.empty())
+            if (a.size() != b.size())
                 return false;
-
-            return _wcsicmp(string_a.data(), string_b.data()) == 0;
+            return _wcsnicmp(a.data(), b.data(), a.size()) == 0;
         }
-
-        /// compare two wide strings, case-sensitive
-        /// @param string_a first string
-        /// @param string_b second string
-        /// @return true if they are equal or false if they are not
-        inline bool equals(std::wstring_view string_a, std::wstring_view string_b)
-        {
-            if (string_a.empty())
-                return string_b.empty();
-
-            if (string_b.empty())
-                return false;
-
-            return wcscmp(string_a.data(), string_b.data()) == 0;
-        }
-
-    } // namespace wstring
-} // namespace pnq
+    }
+}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Windows.h"
+#include <Windows.h>
 #include <string>
 #include <format>
 #include <pnq/string.h>
@@ -9,29 +9,36 @@ namespace pnq
 {
     namespace windows
     {
+        /// Convert HRESULT to human-readable error string (US English).
+        /// @param hResult the HRESULT to convert
+        /// @return error message, or hex code if lookup fails
         inline std::string hresult_as_string(HRESULT hResult)
         {
-            std::vector<wchar_t> buffer;
-            buffer.resize(1024);
+            constexpr size_t buffer_size = 1024;
+            wchar_t buffer[buffer_size];
 
-            // US English, see https://learn.microsoft.com/en-us/windows/win32/msi/localizing-the-error-and-actiontext-tables
-            constexpr DWORD language_id{0x409};
+            constexpr DWORD language_id = 0x409; // US English
 
-            const auto buffer_size{static_cast<DWORD>(buffer.size())};
-            if (!::FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, hResult, language_id, buffer.data(), buffer_size, nullptr))
+            DWORD len = ::FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, hResult, language_id, buffer, buffer_size, nullptr);
+            if (!len)
             {
-                if (!::FormatMessage(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_HMODULE,
-                        GetModuleHandle(TEXT("NTDLL.DLL")),
-                        hResult,
-                        language_id,
-                        buffer.data(),
-                        buffer_size,
-                        nullptr))
-                {
-                    return std::format("{0:#x} ({0})", hResult);
-                }
+                len = ::FormatMessageW(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_HMODULE,
+                    GetModuleHandle(TEXT("NTDLL.DLL")),
+                    hResult,
+                    language_id,
+                    buffer,
+                    buffer_size,
+                    nullptr);
             }
-            return string::encode_as_utf8(buffer.data());
+
+            if (!len)
+                return std::format("{:#x} ({})", hResult, hResult);
+
+            // Trim trailing \r\n
+            while (len > 0 && (buffer[len - 1] == L'\r' || buffer[len - 1] == L'\n'))
+                --len;
+
+            return string::encode_as_utf8(std::wstring_view(buffer, len));
         }
-    } // namespace windows
-} // namespace pnq
+    }
+}

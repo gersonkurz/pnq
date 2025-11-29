@@ -1,9 +1,7 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
-#include <optional>
-#include <string>
-#include <vector>
 
 #undef USE_REFCOUNT_DEBUGGING
 #ifdef USE_REFCOUNT_DEBUGGING
@@ -16,40 +14,35 @@
 
 namespace pnq
 {
+    /// Interface for reference-counted objects.
+    /// Provides COM-style AddRef/Release semantics with thread-safe reference counting.
     struct IRefCounted
     {
-        IRefCounted() = default; // Default constructor
+        IRefCounted() = default;
         virtual ~IRefCounted() = default;
 
-        // Note: We use deleted move constructors/assignment operators to allow moving but prevent copying.
-        IRefCounted(const IRefCounted &) = delete;            // No copy
-        IRefCounted &operator=(const IRefCounted &) = delete; // No assignment
-        IRefCounted(IRefCounted &&) = default;                // Move is fine
-        IRefCounted &operator=(IRefCounted &&) = default;     // Move assignment is fine
+        IRefCounted(const IRefCounted &) = delete;
+        IRefCounted &operator=(const IRefCounted &) = delete;
+        IRefCounted(IRefCounted &&) = default;
+        IRefCounted &operator=(IRefCounted &&) = default;
 
-        /// @brief Increment the reference count.
-        /// This method should be called when a new reference to the object is created.
-        /// It is expected to be thread-safe.
+        /// Increment the reference count (thread-safe).
         virtual void retain(REFCOUNT_DEBUG_SPEC) const = 0;
 
-        /// @brief Decrement the reference count.
-        /// This method should be called when a reference to the object is no longer needed.
-        /// If the reference count reaches zero, the object should be deleted.
-        /// It is expected to be thread-safe.
-        /// @note After calling this method, the object should not be used anymore.
-        /// @note If the object is deleted, it should not call any methods on itself after this point.
+        /// Decrement the reference count (thread-safe).
+        /// Object is deleted when count reaches zero.
         virtual void release(REFCOUNT_DEBUG_SPEC) const = 0;
 
-        /// @brief Clear the internal state of the object.
-        /// This method is intended to reset the internal state of the object without deleting it.
-        /// It can be used to free resources or reset data. It does NOT touch the reference count.
+        /// Reset internal state without affecting reference count.
         virtual void clear() = 0;
     };
 
+    /// Mixin template that adds reference counting to a base class.
+    /// @tparam T base class that inherits from IRefCounted
     template <typename T> class RefCounted : public T
     {
     public:
-        explicit RefCounted<T>()
+        RefCounted()
             : m_refCount{1}
         {
         }
@@ -58,19 +51,23 @@ namespace pnq
         {
             ++m_refCount;
         }
+
         void release(REFCOUNT_DEBUG_SPEC) const override final
         {
             if (--m_refCount == 0)
                 delete this;
         }
+
         void clear() override
         {
-        } // Often unused in non-UI objects
+        }
 
     private:
         mutable std::atomic<int> m_refCount;
     };
 
+    /// Concrete base class with reference counting built-in.
+    /// Derive from this when you don't need the mixin pattern.
     class RefCountImpl : public IRefCounted
     {
     public:
@@ -92,7 +89,7 @@ namespace pnq
 
         void clear() override
         {
-        } // Often unused in non-UI objects
+        }
 
     private:
         mutable std::atomic<int> m_refCount;

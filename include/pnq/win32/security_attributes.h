@@ -1,6 +1,11 @@
 #pragma once
 
+#include <format>
+#include <memory>
+
 #include <sddl.h>
+#include <pnq/string.h>
+#include <pnq/logging.h>
 
 namespace pnq
 {
@@ -57,7 +62,7 @@ namespace pnq
                     {
 
                         logging::report_windows_error(
-                            GetLastError(), PNQ_FUNCTION_CONTEXT, std::format("ConvertStringSecurityDescriptorToSecurityDescriptorW({}) failed", SDDL));
+                            PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("ConvertStringSecurityDescriptorToSecurityDescriptorW({}) failed", SDDL));
                     }
                     else
                     {

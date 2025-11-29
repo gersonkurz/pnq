@@ -7,6 +7,7 @@
 #include <pnq/string.h>
 #include <pnq/wstring.h>
 #include <pnq/environment_variables.h>
+#include <pnq/string_expander.h>
 #include <pnq/directory.h>
 #include <pnq/console.h>
 #include <pnq/file.h>
@@ -15,40 +16,79 @@ namespace pnq
 {
     namespace path
     {
+        /// Get the Windows path separator character.
         constexpr auto separator()
         {
             return '\\';
         }
 
+        /// Get the Windows path separator as a string.
         constexpr auto separator_string()
         {
             return "\\";
         }
 
-        inline std::string normalize(std::string_view path_pattern, const std::unordered_map<std::string, std::string> &vars)
+        /// Get builtin path variables.
+        /// @return map with CD, APPDIR, WINDIR, SYSDIR
+        inline std::unordered_map<std::string, std::string> get_builtin_vars()
         {
-            // TODO: add proper implementation
-            return std::string{path_pattern};
+            return {
+                {"CD", directory::current()},
+                {"APPDIR", directory::application()},
+                {"WINDIR", directory::windows()},
+                {"SYSDIR", directory::system()},
+            };
         }
 
+        /// Normalize a path pattern with variable substitution.
+        /// Expands %VAR% patterns using provided vars, builtins (CD, APPDIR, WINDIR, SYSDIR),
+        /// and environment variables (in that priority order).
+        /// Also normalizes path separators to backslash.
+        /// @param path_pattern path to normalize
+        /// @param vars variable map for substitution (highest priority)
+        /// @return normalized path with variables expanded
+        inline std::string normalize(std::string_view path_pattern, const std::unordered_map<std::string, std::string> &vars)
+        {
+            // Merge user vars with builtins (user vars take priority)
+            auto merged = get_builtin_vars();
+            for (const auto &[k, v] : vars)
+            {
+                merged[k] = v;
+            }
+
+            // Expand variables
+            std::string result = string::Expander{merged, true}.expand(path_pattern);
+
+            // Normalize forward slashes to backslashes
+            for (char &c : result)
+            {
+                if (c == '/')
+                    c = '\\';
+            }
+
+            return result;
+        }
+
+        /// Normalize a path pattern using builtins and environment variables.
         inline std::string normalize(std::string_view path_pattern)
         {
             return normalize(path_pattern, {});
         }
 
+        /// Helper class for combining path components.
+        /// Handles ".." navigation.
         class PathCombiner final
         {
         public:
-            PathCombiner()
-            {
-            }
+            PathCombiner() = default;
 
+            /// Add a path component, handling ".." navigation.
             void push_component(std::string_view component)
             {
                 const auto normalized_component{path::normalize(component)};
-                for (auto subcomponent : string::split(normalized_component, path::separator_string()))
+                for (const auto &subcomponent : string::split(normalized_component, path::separator_string()))
                 {
-                    if (string::equals(subcomponent, ".."))
+                    if (subcomponent == "..")
                     {
                         if (!m_components.empty())
                         {
@@ -62,18 +102,15 @@ namespace pnq
                 }
             }
 
+            /// Get the combined path as a string.
             auto as_string() const
             {
                 return string::join(m_components, path::separator_string());
             }
 
         private:
-            PathCombiner(const PathCombiner &) = delete;
-            PathCombiner &operator=(const PathCombiner &) = delete;
-            PathCombiner(PathCombiner &&) = delete;
-            PathCombiner &operator=(PathCombiner &&) = delete;
+            PNQ_DECLARE_NON_COPYABLE(PathCombiner)
 
-        private:
             std::vector<std::string> m_components;
         };
 
@@ -92,6 +129,8 @@ namespace pnq
             combine_internal_do_not_use_directly(output, args...);
         }
 
+        /// Combine multiple path components into a single path.
+        /// Handles ".." navigation and normalizes separators.
         template <typename T, typename... ARGS> inline auto combine(const T &x, const ARGS &...args)
         {
             PathCombiner result;
@@ -99,12 +138,10 @@ namespace pnq
             return result.as_string();
         }
 
-        /// <summary>
-        /// Given a filename, change the path to another extension
-        /// </summary>
-        /// <param name="filename"></param>
-        /// <param name="new_extension"></param>
-        /// <returns></returns>
+        /// Change the extension of a filename.
+        /// @param filename original filename
+        /// @param new_extension new extension (should include the dot)
+        /// @return filename with new extension
         inline std::string change_extension(std::string_view filename, std::string_view new_extension)
         {
             const auto pos = filename.rfind('.');
@@ -122,6 +159,10 @@ namespace pnq
             }
         }
 
+        /// Check if file exists, trying executable extensions if needed.
+        /// @param name filename to check (modified if found with different extension)
+        /// @param is_executable if true, try PATHEXT extensions
+        /// @return true if file exists
         inline bool determine_existing_file(std::string &name, bool is_executable)
         {
             if (file::exists(name.c_str()))
@@ -132,7 +173,7 @@ namespace pnq
 
             std::string pathext{".EXE;.BAT;.CMD"};
             environment_variables::get("PATHEXT", pathext);
-            for (const auto possible_extension : string::split(pathext, ";"))
+            for (const auto &possible_extension : string::split(pathext, ";"))
             {
                 const auto temp{change_extension(name, possible_extension)};
                 if (file::exists(temp))
@@ -144,9 +185,10 @@ namespace pnq
             return false;
         }
 
+        /// Look for a file in a specific directory.
         inline bool locate_in_directory(std::string_view directory, std::string_view filename, std::string &result, bool is_executable)
         {
-            if (string::is_empty(directory))
+            if (directory.empty())
                 return false;
 
             auto temp = combine(directory, filename);
@@ -157,6 +199,11 @@ namespace pnq
             return true;
         }
 
+        /// Search for a file in standard locations and PATH.
+        /// @param name filename to find
+        /// @param result receives the full path if found
+        /// @param is_executable if true, try executable extensions
+        /// @return true if found
         inline bool find_filename(std::string_view name, std::string &result, bool is_executable)
         {
             if (file::exists(name))
@@ -166,7 +213,7 @@ namespace pnq
             }
 
             const std::vector<std::function<std::string()>> methods{&directory::application, &directory::current, &directory::system, &directory::windows};
-            for (const auto method : methods)
+            for (const auto &method : methods)
             {
                 if (locate_in_directory(method(), name, result, is_executable))
                     return true;
@@ -178,7 +225,7 @@ namespace pnq
                 return false;
             }
 
-            for (const auto path_element : string::split(path, ";"))
+            for (const auto &path_element : string::split(path, ";"))
             {
                 if (locate_in_directory(path_element, name, result, is_executable))
                     return true;
@@ -186,6 +233,8 @@ namespace pnq
             return false;
         }
 
+        /// Search for an executable in standard locations and PATH.
+        /// Adds .exe extension if none provided.
         inline bool find_executable(std::string_view name, std::string &result)
         {
             if (file::get_extension(name).empty())
@@ -197,9 +246,12 @@ namespace pnq
             return find_filename(name, result, true);
         }
 
-        inline std::filesystem::path get_roaming_app_data()
+        /// Get the roaming app data folder for a specific application.
+        /// Creates the folder if it doesn't exist.
+        /// @param app_name application folder name
+        /// @return path to the application's roaming app data folder
+        inline std::filesystem::path get_roaming_app_data(std::string_view app_name)
         {
-            // Get ROAMINGAPPDATA path
             PWSTR roamingAppDataPath = nullptr;
             HRESULT hr = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roamingAppDataPath);
             if (FAILED(hr))
@@ -210,11 +262,9 @@ namespace pnq
             const std::wstring wpath{roamingAppDataPath};
             CoTaskMemFree(roamingAppDataPath);
 
-            // Convert to UTF-8 and append pserv5 folder
             const std::string appDataPath = string::encode_as_utf8(wpath);
-            const std::filesystem::path path = std::filesystem::path(appDataPath) / "pserv5";
+            const std::filesystem::path path = std::filesystem::path(appDataPath) / std::string(app_name);
 
-            // Create directory if it doesn't exist
             if (!std::filesystem::exists(path))
             {
                 std::filesystem::create_directories(path);

@@ -1,23 +1,35 @@
 #pragma once
 
+#include <filesystem>
+#include <format>
+#include <string>
+#include <vector>
+
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/msvc_sink.h>
+#include <pnq/windows_errors.h>
 
 namespace pnq
 {
     namespace logging
     {
-        inline void report_windows_error(DWORD error_code, const char *context, std::string_view message)
+        /// Log a Windows error with context.
+        /// @param context function or location identifier (use PNQ_FUNCTION_CONTEXT)
+        /// @param error_code Windows error code (GetLastError() or HRESULT)
+        /// @param message description of what failed
+        inline void report_windows_error(const char *context, DWORD error_code, std::string_view message)
         {
-            spdlog::error("[{}] {}: Windows error code {}", context, message, error_code);
+            spdlog::error("[{}] {}: {}", context, message, windows::hresult_as_string(static_cast<HRESULT>(error_code)));
         }
 
+        /// Initialize logging with MSVC debug output sink.
+        /// Sets up spdlog with OutputDebugString for Visual Studio debugger.
+        /// @param app_name application name for the logger
+        /// @return shared pointer to the configured logger
         inline std::shared_ptr<spdlog::logger> initialize_logging(std::string_view app_name)
         {
-            // MSVC OutputDebugString sink for Visual Studio debugger only
-            // NO console sink - console output should be done via console.h in pservc
             auto msvc_sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
             msvc_sink->set_level(spdlog::level::warn);
 
@@ -25,16 +37,18 @@ namespace pnq
             auto logger = std::make_shared<spdlog::logger>(std::string(app_name), sinks.begin(), sinks.end());
             logger->set_level(spdlog::level::debug);
 
-            // Explicitly drop the default logger to prevent any console output
             spdlog::drop_all();
             spdlog::set_default_logger(logger);
 
             return logger;
         }
 
+        /// Add rotating file sink to existing logger.
+        /// Forces rotation on startup so each run gets a fresh log file.
+        /// Keeps up to 10 backup files of 10MB each.
+        /// @param logFilePath path to the log file
         inline void reconfigure_logging_for_file(const std::string &logFilePath)
         {
-            // Get existing logger
             auto logger = spdlog::default_logger();
 
             // Force rotation on startup to create new log file
@@ -70,7 +84,6 @@ namespace pnq
             auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logFilePath, 1024 * 1024 * 10, 10);
             file_sink->set_level(spdlog::level::debug);
 
-            // Add file sink to existing logger
             logger->sinks().push_back(file_sink);
         }
     } // namespace logging

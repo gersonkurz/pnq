@@ -1,8 +1,14 @@
 #pragma once
-#include <pnq/config/config_backend.h>
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include <toml++/toml.hpp>
 #include <spdlog/spdlog.h>
-
+#include <pnq/config/config_backend.h>
 
 namespace pnq
 {
@@ -20,7 +26,6 @@ namespace pnq
 
             bool load(const std::string &path, int32_t &value) override
             {
-                auto loc = std::source_location::current();
                 if (auto val = getValueAtPath(path))
                 {
                     if (val->is_integer())
@@ -39,7 +44,6 @@ namespace pnq
 
             bool load(const std::string &path, bool &value) override
             {
-                auto loc = std::source_location::current();
                 if (auto val = getValueAtPath(path))
                 {
                     if (val->is_boolean())
@@ -57,8 +61,7 @@ namespace pnq
             }
 
             bool load(const std::string &path, std::string &value) override
-            {                
-                auto loc = std::source_location::current();
+            {
                 if (auto val = getValueAtPath(path))
                 {
                     if (val->is_string())
@@ -77,7 +80,6 @@ namespace pnq
 
             bool sectionExists(const std::string &path) override
             {
-                auto loc = std::source_location::current();
                 auto parts = splitPath(path);
                 if (parts.empty())
                 {
@@ -113,7 +115,6 @@ namespace pnq
 
             bool deleteKey(const std::string &path) override
             {
-                auto loc = std::source_location::current();
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -152,7 +153,6 @@ namespace pnq
 
             bool deleteSection(const std::string &path) override
             {
-                auto loc = std::source_location::current();
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -236,8 +236,6 @@ namespace pnq
 
             toml::node *getValueAtPath(const std::string &path)
             {
-                auto loc = std::source_location::current();
-
                 auto parts = splitPath(path);
                 if (parts.empty())
                 {

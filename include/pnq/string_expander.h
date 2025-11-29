@@ -9,6 +9,9 @@ namespace pnq
 {
     namespace string
     {
+        /// Expands %VARIABLE% style placeholders in strings.
+        /// Variables are looked up first in a provided map, then in environment variables.
+        /// Use %% to escape a literal percent sign.
         class Expander final
         {
             enum class RECORDING_PATTERN
@@ -26,6 +29,9 @@ namespace pnq
 
             ~Expander() = default;
 
+            /// Construct with a variable lookup map.
+            /// @param variables map of variable names to values
+            /// @param use_environment_variables whether to fall back to environment variables
             Expander(const std::unordered_map<std::string, std::string> &variables, bool use_environment_variables = true)
                 : m_variables{&variables},
                   m_use_environment_variables{use_environment_variables}
@@ -38,12 +44,15 @@ namespace pnq
             Expander &operator=(Expander &&) = delete;
 
         public:
+            /// Expand all %VARIABLE% patterns in the input string.
+            /// @param string_to_expand input string with placeholders
+            /// @return expanded string with variables substituted
             std::string expand(std::string_view string_to_expand) const
             {
-                const char *text{string_to_expand.data()};
+                if (string_to_expand.empty())
+                    return {};
 
-                if (is_empty(text))
-                    return text;
+                const char *text{string_to_expand.data()};
 
                 auto recording_pattern{RECORDING_PATTERN::PLAINTEXT};
                 bool is_first_char_after_start_of_pattern{false};

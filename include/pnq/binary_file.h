@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstring>
 #include <format>
+
 #include <pnq/string.h>
 #include <pnq/win32/handle.h>
 #include <pnq/win32/security_attributes.h>
@@ -9,10 +11,10 @@
 
 namespace pnq
 {
+    /// Binary file I/O with optional write caching.
     class BinaryFile final
     {
     public:
-        /// Default constructor
         BinaryFile()
             : m_cache_write_pos{0}
         {
@@ -28,80 +30,99 @@ namespace pnq
         BinaryFile(BinaryFile &&) = delete;
         BinaryFile &operator=(BinaryFile &&) = delete;
 
+        /// Open or create file for appending.
+        /// @param filename path to file
+        /// @return true if successful
         bool create_or_open_for_write_append(std::string_view filename)
         {
             win32::SecurityAttributes sa;
 
-            const auto handle{::CreateFileW(string::encode_as_utf16(filename).c_str(),
+            const auto handle = ::CreateFileW(string::encode_as_utf16(filename).c_str(),
                 GENERIC_WRITE,
                 FILE_SHARE_READ,
                 sa.default_access(),
                 OPEN_ALWAYS,
                 FILE_ATTRIBUTE_NORMAL,
-                nullptr)};
+                nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, std::format("CreateFile({}) failed", filename));
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
                 return false;
             }
             m_file.set(handle);
-            const auto result{::SetFilePointer(handle, 0, nullptr, FILE_END)};
+            const auto result = ::SetFilePointer(handle, 0, nullptr, FILE_END);
             if (result == INVALID_SET_FILE_POINTER)
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "SetFilePointer() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "SetFilePointer() failed");
                 m_file.close();
                 return false;
             }
             return true;
         }
+
+        /// Create file for writing (truncates existing).
+        /// @param filename path to file
+        /// @return true if successful
         bool create_for_writing(std::string_view filename)
         {
             win32::SecurityAttributes sa;
 
-            const auto handle{::CreateFileW(string::encode_as_utf16(filename).c_str(),
+            const auto handle = ::CreateFileW(string::encode_as_utf16(filename).c_str(),
                 GENERIC_WRITE,
                 FILE_SHARE_READ,
                 sa.default_access(),
                 CREATE_ALWAYS,
                 FILE_ATTRIBUTE_NORMAL,
-                nullptr)};
+                nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, std::format("CreateFile({}) failed", filename));
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
                 return false;
             }
             m_file.set(handle);
             return true;
         }
+
+        /// Open existing file for reading.
+        /// @param filename path to file
+        /// @return true if successful
         bool open_for_reading(std::string_view filename)
         {
             win32::SecurityAttributes sa;
 
-            const auto handle{::CreateFileW(string::encode_as_utf16(filename).c_str(),
+            const auto handle = ::CreateFileW(string::encode_as_utf16(filename).c_str(),
                 GENERIC_READ,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 sa.default_access(),
                 OPEN_EXISTING,
                 FILE_ATTRIBUTE_NORMAL,
-                nullptr)};
+                nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, std::format("CreateFile('%s') failed", filename));
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
                 return false;
             }
             m_file.set(handle);
             return true;
         }
+
+        /// Get file size in bytes.
         uint64_t get_file_size() const
         {
             LARGE_INTEGER file_size{0};
             if (!GetFileSizeEx(m_file, &file_size))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "GetFileSizeEx() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetFileSizeEx() failed");
                 return 0;
             }
             return file_size.QuadPart;
         }
+
+        /// Read entire file into buffer.
+        /// @param filename path to file
+        /// @param result receives the file contents
+        /// @param pad_bytes_at_end optional zero-padding at end
+        /// @return true if successful
         static bool read(std::string_view filename, bytes &result, size_t pad_bytes_at_end = 0)
         {
             result.clear();
@@ -110,60 +131,77 @@ namespace pnq
             if (!bf.open_for_reading(filename))
                 return false;
 
-            const size_t expected_file_size{static_cast<size_t>(bf.get_file_size())};
+            const size_t expected_file_size = static_cast<size_t>(bf.get_file_size());
+
+            // Empty file with no padding is valid
+            if (expected_file_size == 0 && pad_bytes_at_end == 0)
+                return true;
+
             result.resize(expected_file_size + pad_bytes_at_end);
 
-            // TODO: better handling of Out-of-memory-conditions
-            if (result.empty())
-                return false;
-
-            DWORD bytes_actually_read{0};
-            if (!bf.raw_read(result.data(), static_cast<DWORD>(expected_file_size), bytes_actually_read))
-                return false;
-
-            if (bytes_actually_read < expected_file_size)
+            if (expected_file_size > 0)
             {
-                // we should know about this, but:
-                spdlog::error("unexpected early read-end");
-                return false;
+                DWORD bytes_actually_read = 0;
+                if (!bf.raw_read(result.data(), static_cast<DWORD>(expected_file_size), bytes_actually_read))
+                    return false;
+
+                if (bytes_actually_read < expected_file_size)
+                {
+                    spdlog::error("unexpected early read-end");
+                    return false;
+                }
             }
 
             if (pad_bytes_at_end)
             {
-                ZeroMemory(&result[expected_file_size], pad_bytes_at_end);
+                std::memset(&result[expected_file_size], 0, pad_bytes_at_end);
             }
 
             return true;
         }
+
+        /// Read into pre-sized buffer.
+        /// @param result buffer to read into (size determines bytes to read)
+        /// @return true if successful
         bool read(bytes &result) const
         {
-            const DWORD dwBytesAvailable = (DWORD)result.size();
-            if (dwBytesAvailable == 0)
+            const DWORD bytes_available = static_cast<DWORD>(result.size());
+            if (bytes_available == 0)
             {
-                spdlog::error("binary_file::Read() called, but read buffer is empty");
+                spdlog::error("BinaryFile::read() called with empty buffer");
                 return false;
             }
 
-            DWORD dwBytesActuallyRead = 0;
-            if (!raw_read(&result[0], dwBytesAvailable, dwBytesActuallyRead))
+            DWORD bytes_actually_read = 0;
+            if (!raw_read(result.data(), bytes_available, bytes_actually_read))
                 return false;
 
-            if (dwBytesActuallyRead < dwBytesAvailable)
+            if (bytes_actually_read < bytes_available)
             {
-                result.resize(dwBytesActuallyRead);
+                result.resize(bytes_actually_read);
             }
             return true;
         }
-        static bool write(std::string_view filename, const memory_view &result)
+
+        /// Write entire buffer to new file.
+        /// @param filename path to file
+        /// @param data data to write
+        /// @return true if successful
+        static bool write(std::string_view filename, const memory_view &data)
         {
             BinaryFile bf;
 
             if (!bf.create_for_writing(filename))
                 return false;
 
-            return bf.raw_write(result.data(), result.size());
+            return bf.raw_write(data.data(), data.size());
         }
-        bool write(const BYTE *memory, size_t size)
+
+        /// Write bytes (uses cache if enabled).
+        /// @param memory pointer to data
+        /// @param size number of bytes
+        /// @return true if successful
+        bool write(const std::uint8_t *memory, size_t size)
         {
             if (m_cache.empty())
             {
@@ -171,49 +209,61 @@ namespace pnq
             }
             return cached_write(memory, size);
         }
+
+        /// Write memory_view.
         bool write(const memory_view &data)
         {
             return write(data.data(), data.size());
         }
-        bool write(LPCSTR text)
+
+        /// Write C string.
+        bool write(const char *text)
         {
-            return write(reinterpret_cast<const BYTE *>(text), string::length(text));
+            return write(reinterpret_cast<const std::uint8_t *>(text), string::length(text));
         }
 
+        /// Get current file position.
         uint64_t get_absolute_file_position() const
         {
-            const LARGE_INTEGER liOfs{0};
-            LARGE_INTEGER liNew{0};
-            if (!SetFilePointerEx(m_file, liOfs, &liNew, FILE_CURRENT))
+            const LARGE_INTEGER offset{0};
+            LARGE_INTEGER new_pos{0};
+            if (!SetFilePointerEx(m_file, offset, &new_pos, FILE_CURRENT))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "GetFilePosition() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetFilePosition() failed");
             }
-            return liNew.QuadPart;
+            return new_pos.QuadPart;
         }
+
+        /// Set absolute file position.
+        /// @param position byte offset from start
+        /// @return true if successful
         bool set_absolute_file_position(uint64_t position) const
         {
-            LARGE_INTEGER liOfs;
-            liOfs.QuadPart = position;
-            LARGE_INTEGER liNew{0};
-            if (!SetFilePointerEx(m_file, liOfs, &liNew, FILE_BEGIN))
+            LARGE_INTEGER offset;
+            offset.QuadPart = position;
+            LARGE_INTEGER new_pos{0};
+            if (!SetFilePointerEx(m_file, offset, &new_pos, FILE_BEGIN))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "SetFilePositionEx() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "SetFilePositionEx() failed");
                 return false;
             }
             return true;
         }
 
+        /// Flush cache and close file.
         void close()
         {
             flush();
             m_file.close();
         }
 
+        /// Check if file handle is valid.
         bool is_valid() const
         {
             return m_file.is_valid();
         }
 
+        /// Set write cache size (0 disables caching).
         void set_cache_size(size_t size)
         {
             if (size == 0)
@@ -226,84 +276,87 @@ namespace pnq
             }
         }
 
+        /// Check if write caching is enabled.
         bool has_cache() const
         {
             return !m_cache.empty();
         }
 
+        /// Flush write cache to disk.
         bool flush()
         {
             if (!has_cache() || !m_cache_write_pos)
                 return true;
 
-            const bool result{raw_write(m_cache.data(), m_cache_write_pos)};
+            const bool result = raw_write(m_cache.data(), m_cache_write_pos);
             m_cache_write_pos = 0;
             return result;
         }
 
     private:
-        bool raw_write(const BYTE *memory, size_t size) const
+        bool raw_write(const std::uint8_t *memory, size_t size) const
         {
             if (!m_file.is_valid())
                 return false;
 
-            DWORD bytes_written{0};
+            DWORD bytes_written = 0;
             if (!::WriteFile(m_file, memory, static_cast<DWORD>(size), &bytes_written, nullptr))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "WriteFile() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "WriteFile() failed");
                 return false;
             }
             return true;
         }
-        bool cached_write(const BYTE *memory, size_t size)
+
+        bool cached_write(const std::uint8_t *memory, size_t size)
         {
             if (!size || !memory)
                 return true;
 
-            const auto cacheSize{m_cache.size()};
-            if (!cacheSize)
+            const auto cache_size = m_cache.size();
+            if (!cache_size)
                 return false;
 
-            // if we can write it to the cache, do so now
-            if (m_cache_write_pos + size < cacheSize)
+            // If we can write it to the cache, do so now
+            if (m_cache_write_pos + size < cache_size)
             {
-                memcpy(&m_cache[m_cache_write_pos], memory, size);
+                std::memcpy(&m_cache[m_cache_write_pos], memory, size);
                 m_cache_write_pos += size;
                 return true;
             }
 
-            // we need to flush at some point anyway
+            // We need to flush at some point anyway
             flush();
 
-            // determine how many blocks need to be written directly
-            const auto remainingBytesForCache = size % cacheSize;
-            if (const auto bytesToWriteImmediately = size - remainingBytesForCache)
+            // Determine how many blocks need to be written directly
+            const auto remaining_bytes_for_cache = size % cache_size;
+            if (const auto bytes_to_write_immediately = size - remaining_bytes_for_cache)
             {
-                if (!raw_write(memory, bytesToWriteImmediately))
+                if (!raw_write(memory, bytes_to_write_immediately))
                 {
                     return false;
                 }
-                memory += bytesToWriteImmediately;
+                memory += bytes_to_write_immediately;
             }
 
-            if (remainingBytesForCache)
+            if (remaining_bytes_for_cache)
             {
-                memcpy(m_cache.data(), memory, remainingBytesForCache);
-                m_cache_write_pos = remainingBytesForCache;
+                std::memcpy(m_cache.data(), memory, remaining_bytes_for_cache);
+                m_cache_write_pos = remaining_bytes_for_cache;
             }
             return true;
         }
-        bool raw_read(LPBYTE lpbData, DWORD dwBytesToRead, DWORD &dwBytesActuallyRead) const
+
+        bool raw_read(std::uint8_t *data, DWORD bytes_to_read, DWORD &bytes_actually_read) const
         {
-            if (!::ReadFile(m_file, lpbData, dwBytesToRead, &dwBytesActuallyRead, nullptr))
+            if (!::ReadFile(m_file, data, bytes_to_read, &bytes_actually_read, nullptr))
             {
-                logging::report_windows_error(GetLastError(), PNQ_FUNCTION_CONTEXT, "ReadFile() failed");
+                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "ReadFile() failed");
                 return false;
             }
             return true;
         }
 
-    private:
         win32::Handle m_file;
         bytes m_cache;
         size_t m_cache_write_pos;

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <pnq/wstring.h>
+#include <chrono>
 
+#include <pnq/wstring.h>
 #include <pnq/logging.h>
 #include <pnq/windows_errors.h>
 

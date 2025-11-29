@@ -16,12 +16,17 @@ namespace pnq
         {
         public:
 
-            /// Default constructor
+            /// Default constructor.
             CriticalSection()
-	            :
-				m_cs{}
+                : m_cs{}
             {
                 InitializeCriticalSection(&m_cs);
+            }
+
+            /// Destructor.
+            ~CriticalSection()
+            {
+                DeleteCriticalSection(&m_cs);
             }
 
             CriticalSection(const CriticalSection&) = delete;

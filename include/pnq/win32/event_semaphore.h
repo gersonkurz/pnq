@@ -1,7 +1,7 @@
 #pragma once
 
-#include <pnq\win32\security_attributes.h>
-#include <pnq\win32\handle.h>
+#include <pnq/win32/security_attributes.h>
+#include <pnq/win32/handle.h>
 
 namespace pnq
 {

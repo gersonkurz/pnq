@@ -91,7 +91,7 @@ namespace pnq
             }
 
         private:
-            std::string m_keyName; // Leaf key name for QSettings
+            std::string m_keyName;
             const ValueInterface *m_parentSection{nullptr};
             T m_defaultValue;
             T m_value;

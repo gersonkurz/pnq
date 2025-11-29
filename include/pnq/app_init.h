@@ -1,83 +1,91 @@
-/// @file base_app.h
+/// @file app_init.h
 /// @brief Application initialization and lifecycle management.
-///
-/// BaseApp handles startup sequence: memory leak detection, logging
-/// initialization, config loading, and log file configuration.
 #pragma once
 
 #include <filesystem>
+
 #include <crtdbg.h>
+#include <spdlog/spdlog.h>
 #include <pnq/config/toml_backend.h>
 #include <pnq/config/section.h>
 #include <pnq/logging.h>
-#include <spdlog/spdlog.h>
 #include <pnq/path.h>
+#include <pnq/pnq.h>
 
 namespace pnq
 {
     namespace utils
     {
-        /// @brief Application bootstrap class.
+        /// Application bootstrap class.
         ///
         /// Instantiate at the start of main() to initialize:
         /// 1. CRT memory leak detection (debug builds)
-        /// 2. Logging with console/debug output
+        /// 2. Logging with MSVC debug output
         /// 3. Configuration from TOML file
         /// 4. File logging with configured path
-        /// 5. Log level from configuration
         class AppInit final
         {
         public:
-            AppInit(std::string_view app_name, config::Section* pConfigSection = nullptr)
+            /// Initialize application.
+            /// @param app_name application name (used for paths and logging)
+            /// @param config_section optional config section to load
+            AppInit(std::string_view app_name, config::Section *config_section = nullptr)
             {
-                // setup memory leak detection
+#ifdef _DEBUG
+                // Setup memory leak detection
                 int flag = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
                 flag |= _CRTDBG_LEAK_CHECK_DF;
                 flag |= _CRTDBG_ALLOC_MEM_DF;
                 _CrtSetDbgFlag(flag);
                 _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
                 _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
-                // Change this to leaking allocation's number to break there
                 _CrtSetBreakAlloc(-1);
-
-                // Step 1: Initialize logging with console/debug output only
+#endif
+                // Initialize logging with MSVC debug output
                 auto logger = logging::initialize_logging(app_name);
                 logger->info("{} starting up", app_name);
 
-                // Step 2: Get AppData path and determine config/log paths
-                m_appDataPath = path::get_roaming_app_data();
-                m_configPath = m_appDataPath / (std::string(app_name) + ".toml");
-                logger->info("AppData path: {}", m_appDataPath.string());
-                logger->info("Loading configuration from: {}", m_configPath.string());
+                // Get AppData path and determine config/log paths
+                m_app_data_path = path::get_roaming_app_data(app_name);
+                m_config_path = m_app_data_path / (std::string(app_name) + ".toml");
+                logger->info("AppData path: {}", m_app_data_path.string());
+                logger->info("Loading configuration from: {}", m_config_path.string());
 
-                // Step 3: Load configuration
-                m_pBackend = new config::TomlBackend{m_configPath.string()};
+                // Load configuration
+                m_backend = new config::TomlBackend{m_config_path.string()};
 
-                if(pConfigSection)
+                if (config_section)
                 {
-                    pConfigSection->load(*m_pBackend);
+                    config_section->load(*m_backend);
 
-                    // Step 4: Configure file logging
-                    const auto logFilePath = (m_appDataPath / (std::string(app_name) + ".log")).string();
-                    logger->info("Log file path: {}", logFilePath);
-                    logging::reconfigure_logging_for_file(logFilePath);
-
-                    // Step 5: Apply log level from config
-                    // const auto logLevel = pConfigSection->logging.logLevel.get();
-                    // logger->set_level(spdlog::level::from_str(logLevel));
-                    // logger->info("Log level set to: {}", logLevel);
+                    // Configure file logging
+                    const auto log_file_path = (m_app_data_path / (std::string(app_name) + ".log")).string();
+                    logger->info("Log file path: {}", log_file_path);
+                    logging::reconfigure_logging_for_file(log_file_path);
                 }
             }
 
             ~AppInit()
             {
-                delete m_pBackend;
+                delete m_backend;
             }
 
-            config::TomlBackend *m_pBackend = nullptr; ///< Configuration backend.
-            std::filesystem::path m_appDataPath;        ///< %ROAMINGAPPDATA%/appname path.
-            std::filesystem::path m_configPath;         ///< Path to appname.toml.
+            /// Get the configuration backend.
+            config::TomlBackend *backend() const { return m_backend; }
+
+            /// Get the app data path.
+            const std::filesystem::path &app_data_path() const { return m_app_data_path; }
+
+            /// Get the config file path.
+            const std::filesystem::path &config_path() const { return m_config_path; }
+
+        private:
+            PNQ_DECLARE_NON_COPYABLE(AppInit)
+
+            config::TomlBackend *m_backend = nullptr;
+            std::filesystem::path m_app_data_path;
+            std::filesystem::path m_config_path;
         };
     } // namespace utils
-} // namespace pserv
+} // namespace pnq
 

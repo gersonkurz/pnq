@@ -1,12 +1,20 @@
 #pragma once
 
-#include <pnq/config/value_interface.h>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <spdlog/spdlog.h>
+#include <pnq/config/value_interface.h>
 
 namespace pnq
 {
     namespace config
     {
+        class Section; // Forward declaration
+
+        /// @brief Vector of configuration sections.
+        /// @tparam SectionType The type of section to hold (must derive from Section).
         template <typename SectionType> class TypedValueVector : public ValueInterface
         {
         public:

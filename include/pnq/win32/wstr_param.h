@@ -1,16 +1,17 @@
 #pragma once
 
+#include <string>
+#include <pnq/string.h>
+
 namespace pnq
 {
     namespace win32
     {
-        /**   
-        * \brief  wrapper class for Win32 API string parameters
-        *          
-        * Background: All of NGBT uses UTF-8 internally. But the Windows API is UTF-16LE, so we need to 
-        * convert all strings to wide strings before passing them on to the Windows functions. This 
-        * wrapper class �will do that on the fly for you.
-        */
+        /// Wrapper class for Win32 API string parameters.
+        ///
+        /// Background: pnq uses UTF-8 internally. But the Windows API is UTF-16LE, so we need to
+        /// convert all strings to wide strings before passing them on to the Windows functions.
+        /// This wrapper class will do that on the fly for you.
         class wstr_param final
         {
         public:
