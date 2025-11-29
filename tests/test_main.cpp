@@ -490,6 +490,81 @@ TEST_CASE("string::Expander", "[string_expander]") {
         Expander e(vars);
         REQUIRE(e.expand("%PATH%") == "custom_path");
     }
+
+    SECTION("dollar syntax disabled by default") {
+        std::unordered_map<std::string, std::string> vars{{"NAME", "World"}};
+        Expander e(vars, false);
+        REQUIRE(e.expand("${NAME}") == "${NAME}");  // not expanded
+    }
+
+    SECTION("dollar syntax enabled") {
+        std::unordered_map<std::string, std::string> vars{{"NAME", "World"}};
+        Expander e(vars, false);
+        e.expand_dollar(true);
+        REQUIRE(e.expand("Hello ${NAME}!") == "Hello World!");
+    }
+
+    SECTION("escaped dollar") {
+        std::unordered_map<std::string, std::string> vars;
+        Expander e(vars, false);
+        e.expand_dollar(true);
+        REQUIRE(e.expand("Cost: $$100") == "Cost: $100");
+    }
+
+    SECTION("both percent and dollar") {
+        std::unordered_map<std::string, std::string> vars{
+            {"A", "alpha"},
+            {"B", "beta"}
+        };
+        Expander e(vars, false);
+        e.expand_dollar(true).expand_percent(true);
+        REQUIRE(e.expand("%A% and ${B}") == "alpha and beta");
+    }
+
+    SECTION("disable percent, enable dollar") {
+        std::unordered_map<std::string, std::string> vars{
+            {"VAR", "value"}
+        };
+        Expander e(vars, false);
+        e.expand_percent(false).expand_dollar(true);
+        REQUIRE(e.expand("%VAR% ${VAR}") == "%VAR% value");
+    }
+
+    SECTION("dollar without braces unchanged") {
+        std::unordered_map<std::string, std::string> vars{{"NAME", "test"}};
+        Expander e(vars, false);
+        e.expand_dollar(true);
+        REQUIRE(e.expand("$NAME") == "$NAME");  // only ${NAME} works
+    }
+
+    SECTION("unclosed dollar brace") {
+        std::unordered_map<std::string, std::string> vars;
+        Expander e(vars, false);
+        e.expand_dollar(true);
+        REQUIRE(e.expand("${UNCLOSED") == "${UNCLOSED");
+    }
+
+    SECTION("unclosed percent") {
+        std::unordered_map<std::string, std::string> vars;
+        Expander e(vars, false);
+        REQUIRE(e.expand("%UNCLOSED") == "%UNCLOSED");
+    }
+
+    SECTION("unknown dollar variable unchanged") {
+        std::unordered_map<std::string, std::string> vars;
+        Expander e(vars, false);
+        e.expand_dollar(true);
+        REQUIRE(e.expand("${UNKNOWN}") == "${UNKNOWN}");
+    }
+
+    SECTION("fluent interface chaining") {
+        std::unordered_map<std::string, std::string> vars{{"X", "y"}};
+        auto result = Expander(vars, false)
+            .expand_dollar(true)
+            .expand_percent(true)
+            .expand("${X}%X%");
+        REQUIRE(result == "yy");
+    }
 }
 
 // Test helper class for ref counting
