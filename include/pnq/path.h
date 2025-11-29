@@ -246,24 +246,37 @@ namespace pnq
             return find_filename(name, result, true);
         }
 
-        /// Get the roaming app data folder for a specific application.
-        /// Creates the folder if it doesn't exist.
-        /// @param app_name application folder name
-        /// @return path to the application's roaming app data folder
-        inline std::filesystem::path get_roaming_app_data(std::string_view app_name)
+        /// Get a known folder path by FOLDERID.
+        /// @param folder_id KNOWNFOLDERID (e.g. FOLDERID_RoamingAppData, FOLDERID_LocalAppData)
+        /// @return path to the known folder, or empty path on failure
+        inline std::filesystem::path get_known_folder(const KNOWNFOLDERID &folder_id)
         {
-            PWSTR roamingAppDataPath = nullptr;
-            HRESULT hr = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roamingAppDataPath);
+            PWSTR folder_path = nullptr;
+            HRESULT hr = SHGetKnownFolderPath(folder_id, 0, nullptr, &folder_path);
             if (FAILED(hr))
             {
                 return {};
             }
 
-            const std::wstring wpath{roamingAppDataPath};
-            CoTaskMemFree(roamingAppDataPath);
+            const std::wstring wpath{folder_path};
+            CoTaskMemFree(folder_path);
 
-            const std::string appDataPath = string::encode_as_utf8(wpath);
-            const std::filesystem::path path = std::filesystem::path(appDataPath) / std::string(app_name);
+            return std::filesystem::path(string::encode_as_utf8(wpath));
+        }
+
+        /// Get a known folder path with an app subfolder, creating it if needed.
+        /// @param folder_id KNOWNFOLDERID (e.g. FOLDERID_RoamingAppData, FOLDERID_LocalAppData)
+        /// @param app_name application folder name
+        /// @return path to the application subfolder, or empty path on failure
+        inline std::filesystem::path get_known_folder(const KNOWNFOLDERID &folder_id, std::string_view app_name)
+        {
+            auto base = get_known_folder(folder_id);
+            if (base.empty())
+            {
+                return {};
+            }
+
+            const auto path = base / std::string(app_name);
 
             if (!std::filesystem::exists(path))
             {
@@ -271,6 +284,15 @@ namespace pnq
             }
 
             return path;
+        }
+
+        /// Get the roaming app data folder for a specific application.
+        /// Creates the folder if it doesn't exist.
+        /// @param app_name application folder name
+        /// @return path to the application's roaming app data folder
+        inline std::filesystem::path get_roaming_app_data(std::string_view app_name)
+        {
+            return get_known_folder(FOLDERID_RoamingAppData, app_name);
         }
     } // namespace path
 } // namespace pnq
