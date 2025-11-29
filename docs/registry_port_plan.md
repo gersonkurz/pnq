@@ -277,3 +277,13 @@ pnq/registry.h                    <- Main include, pulls everything in order
 - No std::unique_ptr - raw pointers with RefCountImpl
 - Header-only with inline functions
 - C++23 features welcome
+
+---
+
+## References
+
+- **Excellent .REG file format reference**: https://gist.github.com/SalviaSage/8eba542dc27eea3379a1f7dad3f729a0
+  - Covers encoding differences (REGEDIT4 = ANSI/CP_ACP, Version 5.00 = UTF-16LE with BOM)
+  - Documents all value types and hex encoding quirks
+  - Lists edge cases and format details
+  - **TODO**: After port is complete, review implementation against this reference to ensure all quirks are handled
