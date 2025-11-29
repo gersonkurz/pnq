@@ -262,7 +262,7 @@ pnq/registry.h                    <- Main include, pulls everything in order
 
 - [x] Milestone 1: Foundation Types (types.h, value.h) - DONE
 - [x] Milestone 2: Key Entry (key_entry.h) - DONE
-- [ ] Milestone 3: Live Registry Access
+- [x] Milestone 3: Live Registry Access (iterators.h, key.h) - DONE
 - [ ] Milestone 4: Parser Infrastructure
 - [ ] Milestone 5: Import
 - [ ] Milestone 6: Export

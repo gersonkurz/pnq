@@ -9,9 +9,9 @@
 #include <pnq/registry/types.h>
 #include <pnq/registry/value.h>
 #include <pnq/registry/key_entry.h>
-// TODO: Milestone 3+
-// #include <pnq/registry/iterators.h>
-// #include <pnq/registry/key.h>
+#include <pnq/registry/iterators.h>
+#include <pnq/registry/key.h>
+// TODO: Milestone 4+
 // #include <pnq/registry/parser.h>
 // #include <pnq/registry/importer.h>
 // #include <pnq/registry/exporter.h>

@@ -1235,3 +1235,128 @@ TEST_CASE("registry::key_entry basics", "[registry]") {
         source->release();
     }
 }
+
+TEST_CASE("registry::key live access", "[registry]") {
+    using pnq::registry::key;
+    using pnq::registry::value;
+
+    // Use HKCU\Software for testing - should be writable without elevation
+    const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_test_" + std::to_string(GetCurrentProcessId());
+
+    SECTION("parse_hive") {
+        std::string relative;
+
+        HKEY hive = pnq::registry::parse_hive("HKEY_LOCAL_MACHINE\\SOFTWARE\\Test", relative);
+        REQUIRE(hive == HKEY_LOCAL_MACHINE);
+        REQUIRE(relative == "SOFTWARE\\Test");
+
+        hive = pnq::registry::parse_hive("HKLM\\Test", relative);
+        REQUIRE(hive == HKEY_LOCAL_MACHINE);
+        REQUIRE(relative == "Test");
+
+        hive = pnq::registry::parse_hive("HKCU", relative);
+        REQUIRE(hive == HKEY_CURRENT_USER);
+        REQUIRE(relative.empty());
+    }
+
+    SECTION("open for reading existing key") {
+        key k("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion");
+        REQUIRE(k.open_for_reading());
+        REQUIRE(k.is_open());
+
+        // Read a known value
+        std::string prog_files = k.get_string("ProgramFilesDir");
+        REQUIRE_FALSE(prog_files.empty());
+        REQUIRE(prog_files.find("Program Files") != std::string::npos);
+    }
+
+    SECTION("open nonexistent key fails") {
+        key k("HKEY_LOCAL_MACHINE\\SOFTWARE\\ThisKeyDoesNotExist_12345");
+        REQUIRE_FALSE(k.open_for_reading());
+    }
+
+    SECTION("write and read back values") {
+        // Create test key
+        key k(test_path);
+        REQUIRE(k.open_for_writing());
+
+        // Write values
+        REQUIRE(k.set_string("TestString", "Hello World"));
+        REQUIRE(k.set_dword("TestDword", 0x12345678));
+
+        // Read them back
+        REQUIRE(k.get_string("TestString") == "Hello World");
+        REQUIRE(k.get_dword("TestDword") == 0x12345678);
+
+        // Clean up
+        k.close();
+        REQUIRE(key::delete_recursive(test_path));
+    }
+
+    SECTION("write and delete value") {
+        key k(test_path);
+        REQUIRE(k.open_for_writing());
+
+        // Write a value
+        REQUIRE(k.set_string("ToDelete", "delete me"));
+        REQUIRE(k.get_string("ToDelete") == "delete me");
+
+        // Delete it via remove_flag
+        value v("ToDelete");
+        v.set_string("ignored");
+        v.set_remove_flag(true);
+        REQUIRE(k.set("ToDelete", v));
+
+        // Should be gone
+        REQUIRE(k.get_string("ToDelete", "default") == "default");
+
+        k.close();
+        REQUIRE(key::delete_recursive(test_path));
+    }
+
+    SECTION("enumerate values") {
+        key k(test_path);
+        REQUIRE(k.open_for_writing());
+
+        k.set_string("Val1", "one");
+        k.set_string("Val2", "two");
+        k.set_dword("Val3", 3);
+
+        int count = 0;
+        for (const auto& v : k.enum_values()) {
+            ++count;
+            // Check that values are readable
+            REQUIRE_FALSE(v.name().empty());
+        }
+        REQUIRE(count == 3);
+
+        k.close();
+        REQUIRE(key::delete_recursive(test_path));
+    }
+
+    SECTION("enumerate subkeys") {
+        key parent(test_path);
+        REQUIRE(parent.open_for_writing());
+
+        // Create subkeys
+        key sub1(test_path + "\\SubKey1");
+        REQUIRE(sub1.open_for_writing());
+        sub1.set_string("Val", "test");
+
+        key sub2(test_path + "\\SubKey2");
+        REQUIRE(sub2.open_for_writing());
+        sub2.set_string("Val", "test");
+
+        int count = 0;
+        for (const auto& subkey_path : parent.enum_keys()) {
+            ++count;
+            REQUIRE(subkey_path.find("SubKey") != std::string::npos);
+        }
+        REQUIRE(count == 2);
+
+        sub1.close();
+        sub2.close();
+        parent.close();
+        REQUIRE(key::delete_recursive(test_path));
+    }
+}
