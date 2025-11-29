@@ -1360,3 +1360,172 @@ TEST_CASE("registry::key live access", "[registry]") {
         REQUIRE(key::delete_recursive(test_path));
     }
 }
+
+TEST_CASE("registry::regfile_parser", "[registry]") {
+    using pnq::registry::regfile_parser;
+    using pnq::registry::key_entry;
+    using pnq::registry::import_options;
+
+    SECTION("parse REGEDIT4 format") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Test]\r\n"
+            "\"StringValue\"=\"Hello World\"\r\n"
+            "\"DwordValue\"=dword:00001234\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        REQUIRE(result != nullptr);
+        REQUIRE(result->get_path() == "HKEY_LOCAL_MACHINE\\SOFTWARE\\Test");
+
+        // Check values
+        auto it = result->values().find("stringvalue");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "Hello World");
+
+        it = result->values().find("dwordvalue");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_dword() == 0x1234);
+
+        result->release();
+    }
+
+    SECTION("parse Windows Registry Editor 5.00 format") {
+        const char* content =
+            "Windows Registry Editor Version 5.00\r\n"
+            "\r\n"
+            "[HKEY_CURRENT_USER\\Software\\MyApp]\r\n"
+            "@=\"Default Value\"\r\n"
+            "\"Name\"=\"Test\"\r\n"
+            "\r\n";
+
+        regfile_parser parser("Windows Registry Editor Version 5.00", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        REQUIRE(result != nullptr);
+        REQUIRE(result->default_value() != nullptr);
+        REQUIRE(result->default_value()->get_string() == "Default Value");
+
+        result->release();
+    }
+
+    SECTION("parse multi-line hex value") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n"
+            "\"Binary\"=hex:01,02,03,04,\\\r\n"
+            "  05,06,07,08\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        REQUIRE(result != nullptr);
+
+        auto it = result->values().find("binary");
+        REQUIRE(it != result->values().end());
+
+        auto& data = it->second->get_binary();
+        REQUIRE(data.size() == 8);
+        REQUIRE(data[0] == 0x01);
+        REQUIRE(data[7] == 0x08);
+
+        result->release();
+    }
+
+    SECTION("parse hex(7) multi-string") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n"
+            "\"MultiSz\"=hex(7):4f,00,6e,00,65,00,00,00,54,00,77,00,6f,00,00,00,00,00\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        auto it = result->values().find("multisz");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->type() == REG_MULTI_SZ);
+
+        result->release();
+    }
+
+    SECTION("parse with escaped strings") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n"
+            "\"Path\"=\"C:\\\\Windows\\\\System32\"\r\n"
+            "\"Quote\"=\"Say \\\"Hello\\\"\"\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+
+        auto it = result->values().find("path");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "C:\\Windows\\System32");
+
+        it = result->values().find("quote");
+        REQUIRE(it != result->values().end());
+        REQUIRE(it->second->get_string() == "Say \"Hello\"");
+
+        result->release();
+    }
+
+    SECTION("parse remove key syntax") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "\r\n"
+            "[-HKEY_LOCAL_MACHINE\\DeleteMe]\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        REQUIRE(result != nullptr);
+        REQUIRE(result->remove_flag() == true);
+
+        result->release();
+    }
+
+    SECTION("parse with comments") {
+        const char* content =
+            "REGEDIT4\r\n"
+            "; This is a comment\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n"
+            "# Another comment\r\n"
+            "\"Value\"=\"Test\"\r\n"
+            "\r\n";
+
+        regfile_parser parser("REGEDIT4",
+            import_options::allow_semicolon_comments | import_options::allow_hashtag_comments);
+        REQUIRE(parser.parse_text(content));
+
+        key_entry* result = parser.get_result();
+        REQUIRE(result != nullptr);
+
+        result->release();
+    }
+
+    SECTION("invalid header fails") {
+        const char* content =
+            "INVALID HEADER\r\n"
+            "[HKEY_LOCAL_MACHINE\\Test]\r\n";
+
+        regfile_parser parser("REGEDIT4", import_options::none);
+        REQUIRE_FALSE(parser.parse_text(content));
+    }
+}
