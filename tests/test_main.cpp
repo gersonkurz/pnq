@@ -1712,3 +1712,176 @@ TEST_CASE("registry::importer", "[registry]") {
         key::delete_recursive(test_path);
     }
 }
+
+TEST_CASE("registry::exporter", "[registry]") {
+    using namespace pnq::registry;
+
+    SECTION("export simple key to string - format4") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\Test");
+        k->find_or_create_value("StringVal")->set_string("Hello World");
+        k->find_or_create_value("DwordVal")->set_dword(42);
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.starts_with("REGEDIT4\r\n"));
+        REQUIRE(result.find("[HKEY_LOCAL_MACHINE\\SOFTWARE\\Test]") != std::string::npos);
+        REQUIRE(result.find("\"StringVal\"=\"Hello World\"") != std::string::npos);
+        REQUIRE(result.find("\"DwordVal\"=dword:0000002a") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export simple key to string - format5") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_CURRENT_USER\\Test");
+        k->find_or_create_value("")->set_string("Default Value");  // default value via empty name
+
+        regfile_format5_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.starts_with("Windows Registry Editor Version 5.00\r\n"));
+        REQUIRE(result.find("@=\"Default Value\"") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export escapes strings properly") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_LOCAL_MACHINE\\Test");
+        k->find_or_create_value("Path")->set_string("C:\\Windows\\System32");
+        k->find_or_create_value("Quote")->set_string("Say \"Hello\"");
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.find("\"Path\"=\"C:\\\\Windows\\\\System32\"") != std::string::npos);
+        REQUIRE(result.find("\"Quote\"=\"Say \\\"Hello\\\"\"") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export remove key syntax") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("-HKEY_LOCAL_MACHINE\\DeleteMe");
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.find("[-HKEY_LOCAL_MACHINE\\DeleteMe]") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export remove value syntax") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_LOCAL_MACHINE\\Test");
+        value* v = k->find_or_create_value("ToDelete");
+        v->set_remove_flag(true);
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.find("\"ToDelete\"=-") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export binary value with hex") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_LOCAL_MACHINE\\Test");
+        value* v = k->find_or_create_value("Binary");
+        bytes data = {0x01, 0x02, 0x03, 0x04};
+        v->set_binary_type(REG_BINARY, data);
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+        REQUIRE(result.find("\"Binary\"=hex:01,02,03,04") != std::string::npos);
+
+        root->release();
+    }
+
+    SECTION("export sorts keys and values") {
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key("HKEY_LOCAL_MACHINE\\Test");
+        k->find_or_create_value("Zebra")->set_string("last");
+        k->find_or_create_value("Alpha")->set_string("first");
+        k->find_or_create_value("Middle")->set_string("middle");
+
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        const std::string& result = exporter.result();
+
+        // Find positions - alpha should come before middle, middle before zebra
+        size_t pos_alpha = result.find("\"Alpha\"");
+        size_t pos_middle = result.find("\"Middle\"");
+        size_t pos_zebra = result.find("\"Zebra\"");
+
+        REQUIRE(pos_alpha != std::string::npos);
+        REQUIRE(pos_middle != std::string::npos);
+        REQUIRE(pos_zebra != std::string::npos);
+        REQUIRE(pos_alpha < pos_middle);
+        REQUIRE(pos_middle < pos_zebra);
+
+        root->release();
+    }
+
+    SECTION("registry_exporter writes to live registry") {
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_exporter_test_" + std::to_string(GetCurrentProcessId());
+
+        // Create key_entry tree
+        key_entry* root = PNQ_NEW key_entry();
+        key_entry* k = root->find_or_create_key(test_path);
+        k->find_or_create_value("TestVal")->set_string("Exported");
+        k->find_or_create_value("TestNum")->set_dword(12345);
+
+        // Export to registry
+        registry_exporter exporter;
+        REQUIRE(exporter.perform_export(root));
+
+        // Verify by reading back
+        key verify_key(test_path);
+        REQUIRE(verify_key.open_for_reading());
+        REQUIRE(verify_key.get_string("TestVal") == "Exported");
+        REQUIRE(verify_key.get_dword("TestNum") == 12345);
+
+        root->release();
+        key::delete_recursive(test_path);
+    }
+
+    SECTION("round-trip: export then import") {
+        key_entry* original = PNQ_NEW key_entry();
+        key_entry* k = original->find_or_create_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\Test");
+        k->find_or_create_value("String")->set_string("Value");
+        k->find_or_create_value("Number")->set_dword(100);
+        k->find_or_create_value("")->set_string("DefaultVal");  // default value
+
+        // Export - use format4 for string round-trip (format5 writes UTF-16LE to files)
+        regfile_format4_exporter exporter;
+        REQUIRE(exporter.perform_export(original));
+
+        // Import
+        regfile_format4_importer importer(exporter.result());
+        key_entry* imported = importer.import();
+        REQUIRE(imported != nullptr);
+
+        // Verify
+        REQUIRE(imported->get_path() == "HKEY_LOCAL_MACHINE\\SOFTWARE\\Test");
+        REQUIRE(imported->values().at("string")->get_string() == "Value");
+        REQUIRE(imported->values().at("number")->get_dword() == 100);
+        REQUIRE(imported->default_value() != nullptr);
+        REQUIRE(imported->default_value()->get_string() == "DefaultVal");
+
+        original->release();
+        imported->release();
+    }
+}

@@ -13,5 +13,4 @@
 #include <pnq/registry/key.h>
 #include <pnq/registry/parser.h>
 #include <pnq/registry/importer.h>
-// TODO: Milestone 6+
-// #include <pnq/registry/exporter.h>
+#include <pnq/registry/exporter.h>
