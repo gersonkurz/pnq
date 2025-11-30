@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
+#include <pnq/platform.h>
 #include <pnq/string.h>
 #include <pnq/wstring.h>
 #include <pnq/environment_variables.h>
@@ -16,16 +17,34 @@ namespace pnq
 {
     namespace path
     {
-        /// Get the Windows path separator character.
-        constexpr auto separator()
+        /// Get the platform path separator character.
+        constexpr char separator()
         {
+#ifdef PNQ_PLATFORM_WINDOWS
             return '\\';
+#else
+            return '/';
+#endif
         }
 
-        /// Get the Windows path separator as a string.
-        constexpr auto separator_string()
+        /// Get the platform path separator as a string.
+        constexpr const char* separator_string()
         {
+#ifdef PNQ_PLATFORM_WINDOWS
             return "\\";
+#else
+            return "/";
+#endif
+        }
+
+        /// Get the "other" path separator (the one NOT native to this platform).
+        constexpr char other_separator()
+        {
+#ifdef PNQ_PLATFORM_WINDOWS
+            return '/';
+#else
+            return '\\';
+#endif
         }
 
         /// Get builtin path variables.
@@ -43,7 +62,7 @@ namespace pnq
         /// Normalize a path pattern with variable substitution.
         /// Expands %VAR% patterns using provided vars, builtins (CD, APPDIR, WINDIR, SYSDIR),
         /// and environment variables (in that priority order).
-        /// Also normalizes path separators to backslash.
+        /// Also normalizes path separators to platform native (backslash on Windows, forward slash elsewhere).
         /// @param path_pattern path to normalize
         /// @param vars variable map for substitution (highest priority)
         /// @return normalized path with variables expanded
@@ -59,11 +78,11 @@ namespace pnq
             // Expand variables
             std::string result = string::Expander{merged, true}.expand(path_pattern);
 
-            // Normalize forward slashes to backslashes
+            // Normalize path separators to platform native
             for (char &c : result)
             {
-                if (c == '/')
-                    c = '\\';
+                if (c == other_separator())
+                    c = separator();
             }
 
             return result;
