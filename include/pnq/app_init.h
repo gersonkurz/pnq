@@ -20,7 +20,7 @@ namespace pnq
         ///
         /// Instantiate at the start of main() to initialize:
         /// 1. CRT memory leak detection (debug builds)
-        /// 2. Logging with MSVC debug output
+        /// 2. Logging with MSVC debug output (and optionally console)
         /// 3. Configuration from TOML file
         /// 4. File logging with configured path
         class AppInit final
@@ -29,7 +29,8 @@ namespace pnq
             /// Initialize application.
             /// @param app_name application name (used for paths and logging)
             /// @param config_section optional config section to load
-            AppInit(std::string_view app_name, config::Section *config_section = nullptr)
+            /// @param enable_console_logging if true, also log to stdout with colors
+            AppInit(std::string_view app_name, config::Section *config_section = nullptr, bool enable_console_logging = false)
             {
 #ifdef _DEBUG
                 // Setup memory leak detection
@@ -41,8 +42,8 @@ namespace pnq
                 _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
                 _CrtSetBreakAlloc(-1);
 #endif
-                // Initialize logging with MSVC debug output
-                auto logger = logging::initialize_logging(app_name);
+                // Initialize logging with MSVC debug output (and optionally console)
+                auto logger = logging::initialize_logging(app_name, enable_console_logging);
                 logger->info("{} starting up", app_name);
 
                 // Get AppData path and determine config/log paths

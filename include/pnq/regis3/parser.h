@@ -538,7 +538,6 @@ namespace pnq
                 {
                     return syntax_error("Expected '=' but got '{}' instead", c);
                 }
-                return true;
             }
 
             bool state_expect_start_of_value_definition(char c)
@@ -720,7 +719,6 @@ namespace pnq
                 {
                     return syntax_error("Expected hex digit at start of binary value");
                 }
-                return true;
             }
 
             bool state_expect_multibyte_value_definition(char c)

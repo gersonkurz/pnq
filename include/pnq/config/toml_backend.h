@@ -202,7 +202,7 @@ namespace pnq
                         m_config = toml::parse_file(m_filename);
                     }
                 }
-                catch (const toml::parse_error &e)
+                catch (const toml::parse_error&)
                 {
                     // Log error but continue with empty config
                     m_config = toml::table{};

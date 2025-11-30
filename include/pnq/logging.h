@@ -27,13 +27,23 @@ namespace pnq
         /// Initialize logging with MSVC debug output sink.
         /// Sets up spdlog with OutputDebugString for Visual Studio debugger.
         /// @param app_name application name for the logger
+        /// @param enable_console if true, also log to stdout with colors
         /// @return shared pointer to the configured logger
-        inline std::shared_ptr<spdlog::logger> initialize_logging(std::string_view app_name)
+        inline std::shared_ptr<spdlog::logger> initialize_logging(std::string_view app_name, bool enable_console = false)
         {
+            std::vector<spdlog::sink_ptr> sinks;
+
             auto msvc_sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
             msvc_sink->set_level(spdlog::level::warn);
+            sinks.push_back(msvc_sink);
 
-            std::vector<spdlog::sink_ptr> sinks{msvc_sink};
+            if (enable_console)
+            {
+                auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+                console_sink->set_level(spdlog::level::info);
+                sinks.push_back(console_sink);
+            }
+
             auto logger = std::make_shared<spdlog::logger>(std::string(app_name), sinks.begin(), sinks.end());
             logger->set_level(spdlog::level::debug);
 
@@ -41,6 +51,16 @@ namespace pnq
             spdlog::set_default_logger(logger);
 
             return logger;
+        }
+
+        /// Add console (stdout) sink to existing logger.
+        /// @param level minimum log level for console output
+        inline void enable_console_logging(spdlog::level::level_enum level = spdlog::level::info)
+        {
+            auto logger = spdlog::default_logger();
+            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+            console_sink->set_level(level);
+            logger->sinks().push_back(console_sink);
         }
 
         /// Add rotating file sink to existing logger.

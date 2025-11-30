@@ -21,6 +21,12 @@ target_compile_definitions(pnq INTERFACE
     _UNICODE
 )
 
+# Compiler warnings
+target_compile_options(pnq INTERFACE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
+)
+
 # Dependencies - try find_package first, fall back to FetchContent for standalone builds
 include(FetchContent)
 

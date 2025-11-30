@@ -1767,7 +1767,7 @@ TEST_CASE("registry::exporter", "[registry]") {
 
     SECTION("export remove key syntax") {
         key_entry* root = PNQ_NEW key_entry();
-        key_entry* k = root->find_or_create_key("-HKEY_LOCAL_MACHINE\\DeleteMe");
+        (void)root->find_or_create_key("-HKEY_LOCAL_MACHINE\\DeleteMe");
 
         regfile_format4_exporter exporter;
         REQUIRE(exporter.perform_export(root));
