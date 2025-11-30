@@ -4,9 +4,7 @@
 /// @brief Registry value class - represents a named value with type and data
 
 #include <pnq/regis3/types.h>
-#include <pnq/string.h>
-#include <pnq/wstring.h>
-#include <pnq/pnq.h>
+#include <pnq/unicode.h>
 
 #include <cassert>
 #include <cstring>
@@ -158,9 +156,9 @@ namespace pnq
 
                 for (const auto& str : strings)
                 {
-                    const std::wstring wval = string::encode_as_utf16(str);
+                    const string16 wval = unicode::to_utf16(str);
                     const auto* p = reinterpret_cast<const std::uint8_t*>(wval.c_str());
-                    const size_t len_bytes = sizeof(wchar_t) * (wval.size() + 1); // include null terminator
+                    const size_t len_bytes = sizeof(char16) * (wval.size() + 1); // include null terminator
 
                     m_data.insert(m_data.end(), p, p + len_bytes);
                 }
@@ -265,14 +263,14 @@ namespace pnq
                     return std::string{default_value};
 
                 // Data is UTF-16LE, convert to UTF-8
-                const auto* wptr = reinterpret_cast<const wchar_t*>(m_data.data());
-                size_t wlen = m_data.size() / sizeof(wchar_t);
+                const auto* wptr = reinterpret_cast<const char16*>(m_data.data());
+                size_t wlen = m_data.size() / sizeof(char16);
 
                 // Strip null terminator if present
-                while (wlen > 0 && wptr[wlen - 1] == L'\0')
+                while (wlen > 0 && wptr[wlen - 1] == 0)
                     --wlen;
 
-                return string::encode_as_utf8({wptr, wlen});
+                return unicode::to_utf8({wptr, wlen});
             }
 
             /// Get as multi-string (for REG_MULTI_SZ).
@@ -284,22 +282,22 @@ namespace pnq
                 if (m_type != REG_MULTI_SZ || m_data.empty())
                     return result;
 
-                const auto* wptr = reinterpret_cast<const wchar_t*>(m_data.data());
-                const size_t total_wchars = m_data.size() / sizeof(wchar_t);
+                const auto* wptr = reinterpret_cast<const char16*>(m_data.data());
+                const size_t total_wchars = m_data.size() / sizeof(char16);
 
                 size_t start = 0;
                 for (size_t i = 0; i < total_wchars; ++i)
                 {
-                    if (wptr[i] == L'\0')
+                    if (wptr[i] == 0)
                     {
                         if (i > start)
                         {
-                            result.push_back(string::encode_as_utf8({wptr + start, i - start}));
+                            result.push_back(unicode::to_utf8({wptr + start, i - start}));
                         }
                         start = i + 1;
 
                         // Double null means end of list
-                        if (i + 1 < total_wchars && wptr[i + 1] == L'\0')
+                        if (i + 1 < total_wchars && wptr[i + 1] == 0)
                             break;
                     }
                 }
@@ -326,8 +324,8 @@ namespace pnq
             /// Store a UTF-8 string as UTF-16LE with null terminator.
             void assign_from_utf8_string(std::string_view val, uint32_t type)
             {
-                const std::wstring wval = string::encode_as_utf16(val);
-                const size_t len_bytes = sizeof(wchar_t) * (wval.size() + 1); // +1 for null terminator
+                const string16 wval = unicode::to_utf16(val);
+                const size_t len_bytes = sizeof(char16) * (wval.size() + 1); // +1 for null terminator
 
                 m_data.resize(len_bytes);
                 m_type = type;
