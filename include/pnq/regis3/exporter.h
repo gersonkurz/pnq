@@ -6,10 +6,13 @@
 #include <pnq/regis3/types.h>
 #include <pnq/regis3/value.h>
 #include <pnq/regis3/key_entry.h>
-#include <pnq/regis3/key.h>
 #include <pnq/string_writer.h>
 #include <pnq/text_file.h>
 #include <pnq/logging.h>
+
+#ifdef PNQ_PLATFORM_WINDOWS
+#include <pnq/regis3/key.h>
+#endif
 
 #include <algorithm>
 #include <vector>
@@ -277,7 +280,9 @@ namespace pnq
         // Format-Specific Exporters
         // =====================================================================
 
+#ifdef PNQ_PLATFORM_WINDOWS
         /// Exporter for REGEDIT4 format .REG files (ANSI/CP_ACP encoding).
+        /// Windows-only due to codepage conversion requirements.
         class regfile_format4_exporter final : public regfile_exporter
         {
         public:
@@ -293,6 +298,7 @@ namespace pnq
                 return text_file::write_ansi(m_filename, m_result);
             }
         };
+#endif // PNQ_PLATFORM_WINDOWS
 
         /// Exporter for Windows Registry Editor Version 5.00 format (UTF-16LE encoding).
         class regfile_format5_exporter final : public regfile_exporter
@@ -307,15 +313,16 @@ namespace pnq
             bool write_file() const override
             {
                 // REGEDIT5 uses UTF-16LE encoding with BOM
-                std::wstring wide = string::encode_as_utf16(m_result);
+                string16 wide = unicode::to_utf16(m_result);
                 return text_file::write_utf16(m_filename, wide);
             }
         };
 
         // =====================================================================
-        // Live Registry Exporter
+        // Live Registry Exporter (Windows-only)
         // =====================================================================
 
+#ifdef PNQ_PLATFORM_WINDOWS
         /// Exporter that writes a key_entry tree to the live Windows registry.
         class registry_exporter final : public export_interface
         {
@@ -397,6 +404,7 @@ namespace pnq
                 return success;
             }
         };
+#endif // PNQ_PLATFORM_WINDOWS
 
     } // namespace regis3
 } // namespace pnq
