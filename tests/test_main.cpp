@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pnq/pnq.h>
-#include <pnq/registry.h>
+#include <pnq/regis3.h>
 
 TEST_CASE("Version is defined", "[version]") {
     REQUIRE(pnq::version_major == 0);
@@ -992,12 +992,12 @@ TEST_CASE("wstring::equals_nocase", "[wstring]") {
 // =============================================================================
 
 TEST_CASE("registry::value basics", "[registry]") {
-    using pnq::registry::value;
+    using pnq::regis3::value;
 
     SECTION("default constructor") {
         value v;
         REQUIRE(v.is_default_value());
-        REQUIRE(v.type() == pnq::registry::REG_TYPE_UNKNOWN);
+        REQUIRE(v.type() == pnq::regis3::REG_TYPE_UNKNOWN);
         REQUIRE_FALSE(v.remove_flag());
     }
 
@@ -1085,8 +1085,8 @@ TEST_CASE("registry::value basics", "[registry]") {
 }
 
 TEST_CASE("registry::key_entry basics", "[registry]") {
-    using pnq::registry::key_entry;
-    using pnq::registry::value;
+    using pnq::regis3::key_entry;
+    using pnq::regis3::value;
 
     SECTION("default constructor creates root") {
         key_entry* root = PNQ_NEW key_entry();
@@ -1237,8 +1237,8 @@ TEST_CASE("registry::key_entry basics", "[registry]") {
 }
 
 TEST_CASE("registry::key live access", "[registry]") {
-    using pnq::registry::key;
-    using pnq::registry::value;
+    using pnq::regis3::key;
+    using pnq::regis3::value;
 
     // Use HKCU\Software for testing - should be writable without elevation
     const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_test_" + std::to_string(GetCurrentProcessId());
@@ -1246,15 +1246,15 @@ TEST_CASE("registry::key live access", "[registry]") {
     SECTION("parse_hive") {
         std::string relative;
 
-        HKEY hive = pnq::registry::parse_hive("HKEY_LOCAL_MACHINE\\SOFTWARE\\Test", relative);
+        HKEY hive = pnq::regis3::parse_hive("HKEY_LOCAL_MACHINE\\SOFTWARE\\Test", relative);
         REQUIRE(hive == HKEY_LOCAL_MACHINE);
         REQUIRE(relative == "SOFTWARE\\Test");
 
-        hive = pnq::registry::parse_hive("HKLM\\Test", relative);
+        hive = pnq::regis3::parse_hive("HKLM\\Test", relative);
         REQUIRE(hive == HKEY_LOCAL_MACHINE);
         REQUIRE(relative == "Test");
 
-        hive = pnq::registry::parse_hive("HKCU", relative);
+        hive = pnq::regis3::parse_hive("HKCU", relative);
         REQUIRE(hive == HKEY_CURRENT_USER);
         REQUIRE(relative.empty());
     }
@@ -1362,9 +1362,9 @@ TEST_CASE("registry::key live access", "[registry]") {
 }
 
 TEST_CASE("registry::regfile_parser", "[registry]") {
-    using pnq::registry::regfile_parser;
-    using pnq::registry::key_entry;
-    using pnq::registry::import_options;
+    using pnq::regis3::regfile_parser;
+    using pnq::regis3::key_entry;
+    using pnq::regis3::import_options;
 
     SECTION("parse REGEDIT4 format") {
         const char* content =
@@ -1531,7 +1531,7 @@ TEST_CASE("registry::regfile_parser", "[registry]") {
 }
 
 TEST_CASE("registry::importer", "[registry]") {
-    using namespace pnq::registry;
+    using namespace pnq::regis3;
 
     SECTION("format4 importer") {
         const char* content =
@@ -1714,7 +1714,7 @@ TEST_CASE("registry::importer", "[registry]") {
 }
 
 TEST_CASE("registry::exporter", "[registry]") {
-    using namespace pnq::registry;
+    using namespace pnq::regis3;
 
     SECTION("export simple key to string - format4") {
         key_entry* root = PNQ_NEW key_entry();

@@ -1,18 +1,18 @@
 #pragma once
 
-/// @file pnq/registry/importer.h
+/// @file pnq/regis3/importer.h
 /// @brief Registry importers - from .REG files and live registry
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/key_entry.h>
-#include <pnq/registry/key.h>
-#include <pnq/registry/parser.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/key_entry.h>
+#include <pnq/regis3/key.h>
+#include <pnq/regis3/parser.h>
 #include <pnq/text_file.h>
 #include <pnq/ref_counted.h>
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // =====================================================================
         // Import Interface
@@ -259,5 +259,5 @@ namespace pnq
             key_entry* m_result;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

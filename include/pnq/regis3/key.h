@@ -1,11 +1,11 @@
 #pragma once
 
-/// @file pnq/registry/key.h
+/// @file pnq/regis3/key.h
 /// @brief Live registry key access - RAII wrapper for Windows registry API
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/value.h>
-#include <pnq/registry/iterators.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/value.h>
+#include <pnq/regis3/iterators.h>
 #include <pnq/string.h>
 #include <pnq/logging.h>
 #include <pnq/win32/wstr_param.h>
@@ -16,7 +16,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // =====================================================================
         // Known Hives
@@ -468,5 +468,5 @@ namespace pnq
             bool m_has_write_permissions;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

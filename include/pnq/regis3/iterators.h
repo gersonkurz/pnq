@@ -1,10 +1,10 @@
 #pragma once
 
-/// @file pnq/registry/iterators.h
+/// @file pnq/regis3/iterators.h
 /// @brief Registry key and value iterators for enumerating live registry content
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/value.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/value.h>
 #include <pnq/string.h>
 #include <pnq/pnq.h>
 
@@ -14,7 +14,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // =====================================================================
         // Value Iterator
@@ -311,5 +311,5 @@ namespace pnq
             std::string m_parent_name;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

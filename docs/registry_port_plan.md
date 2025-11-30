@@ -1,4 +1,4 @@
-# pnq::registry - Port Plan from C# regis3
+# pnq::regis3 - Port Plan from C# regis3
 
 ## Overview
 
@@ -9,37 +9,37 @@ Port the C# regis3 library to C++23 header-only pnq style. The regis3 library pr
 
 **Source:** C:\Projects\2025\12\regdiff\regdiff\regis3\ (C# reference implementation, battle-tested 10+ years)
 **Draft C++ port:** C:\Projects\2025\12\pnq\temp\registry\ (incomplete, needs refactoring)
-**Target:** C:\Projects\2025\12\pnq\include\pnq\registry\
+**Target:** C:\Projects\2025\12\pnq\include\pnq\regis3\
 
 ## Architecture
 
 ### Header Include Order (enforced by structure)
 
 ```
-pnq/registry.h                    <- Main include, pulls everything in order
-  pnq/registry/types.h            <- Enums, constants, forward declarations
-  pnq/registry/value.h            <- Registry value (REG_SZ, REG_DWORD, etc.)
-  pnq/registry/key_entry.h        <- Tree node for in-memory representation
-  pnq/registry/iterators.h        <- key_iterator, value_iterator, enumerators
-  pnq/registry/key.h              <- Live registry HKEY wrapper
-  pnq/registry/parser.h           <- State machine parser for .REG files
-  pnq/registry/importer.h         <- Import from file/string/registry
-  pnq/registry/exporter.h         <- Export to file/string/registry
+pnq/regis3.h                      <- Main include, pulls everything in order
+  pnq/regis3/types.h              <- Enums, constants, forward declarations
+  pnq/regis3/value.h              <- Registry value (REG_SZ, REG_DWORD, etc.)
+  pnq/regis3/key_entry.h          <- Tree node for in-memory representation
+  pnq/regis3/iterators.h          <- key_iterator, value_iterator, enumerators
+  pnq/regis3/key.h                <- Live registry HKEY wrapper
+  pnq/regis3/parser.h             <- State machine parser for .REG files
+  pnq/regis3/importer.h           <- Import from file/string/registry
+  pnq/regis3/exporter.h           <- Export to file/string/registry
 ```
 
 ### Key Mappings from C# to C++/pnq
 
 | C# regis3 | C++ pnq | Notes |
 |-----------|---------|-------|
-| `RegValueEntry` | `pnq::registry::value` | Registry value with type |
-| `RegKeyEntry` | `pnq::registry::key_entry` | Tree node, uses RefCountImpl |
+| `RegValueEntry` | `pnq::regis3::value` | Registry value with type |
+| `RegKeyEntry` | `pnq::regis3::key_entry` | Tree node, uses RefCountImpl |
 | `RegValueEntryKind` | `REG_*` Windows constants | Use native Windows defines |
 | `IRegistryImporter` | `regfile_import_interface` | Pure virtual interface |
 | `IRegistryExporter` | `regfile_export_interface` | Pure virtual interface |
 | `RegFileParser` | `regfile_parser` | State machine, inherits abstract_parser |
 | `RegFileImportOptions` | `REGFILE_IMPORT_OPTIONS` | Flags enum |
 | `RegFileExportOptions` | `REGFILE_EXPORT_OPTIONS` | Flags enum |
-| `Regis3` (static utils) | Functions in `pnq::registry` namespace | Hive mapping, etc. |
+| `Regis3` (static utils) | Functions in `pnq::regis3` namespace | Hive mapping, etc. |
 | `RegEnvReplace` | `pnq::string::Expander` | Already implemented in pnq |
 
 ### pnq Equivalents
@@ -272,7 +272,7 @@ pnq/registry.h                    <- Main include, pulls everything in order
 
 ## Notes
 
-- All classes in `pnq::registry` namespace (not pnq::win32::registry)
+- All classes in `pnq::regis3` namespace
 - Use `PNQ_DECLARE_NON_COPYABLE` macro
 - No std::unique_ptr - raw pointers with RefCountImpl
 - Header-only with inline functions

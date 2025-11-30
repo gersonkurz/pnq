@@ -1,9 +1,9 @@
 #pragma once
 
-/// @file pnq/registry/value.h
+/// @file pnq/regis3/value.h
 /// @brief Registry value class - represents a named value with type and data
 
-#include <pnq/registry/types.h>
+#include <pnq/regis3/types.h>
 #include <pnq/string.h>
 #include <pnq/wstring.h>
 #include <pnq/pnq.h>
@@ -13,7 +13,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         /// A registry value with name, type, and data.
         ///
@@ -352,5 +352,5 @@ namespace pnq
             bool m_remove_flag;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

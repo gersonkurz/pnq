@@ -1,11 +1,11 @@
 #pragma once
 
-/// @file pnq/registry/parser.h
+/// @file pnq/regis3/parser.h
 /// @brief State machine parser infrastructure and .REG file parser
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/value.h>
-#include <pnq/registry/key_entry.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/value.h>
+#include <pnq/regis3/key_entry.h>
 #include <pnq/string.h>
 #include <pnq/string_writer.h>
 #include <pnq/text_file.h>
@@ -17,7 +17,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // =====================================================================
         // Abstract Parser Base
@@ -785,5 +785,5 @@ namespace pnq
             uint32_t m_current_data_kind;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

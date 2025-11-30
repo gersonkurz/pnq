@@ -1,12 +1,12 @@
 #pragma once
 
-/// @file pnq/registry/exporter.h
+/// @file pnq/regis3/exporter.h
 /// @brief Registry exporters - to .REG files and live registry
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/value.h>
-#include <pnq/registry/key_entry.h>
-#include <pnq/registry/key.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/value.h>
+#include <pnq/regis3/key_entry.h>
+#include <pnq/regis3/key.h>
 #include <pnq/string_writer.h>
 #include <pnq/text_file.h>
 #include <pnq/logging.h>
@@ -16,7 +16,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // =====================================================================
         // Export Interface
@@ -398,5 +398,5 @@ namespace pnq
             }
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

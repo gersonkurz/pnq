@@ -1,7 +1,7 @@
 #pragma once
 
-/// @file pnq/registry/types.h
-/// @brief Foundation types for pnq::registry - enums, constants, forward declarations
+/// @file pnq/regis3/types.h
+/// @brief Foundation types for pnq::regis3 - enums, constants, forward declarations
 
 #include <cstdint>
 #include <string>
@@ -11,7 +11,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         // Forward declarations
         class value;
@@ -133,5 +133,5 @@ namespace pnq
         /// Type alias for raw byte storage.
         using bytes = std::vector<std::uint8_t>;
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq

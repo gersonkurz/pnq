@@ -1,10 +1,10 @@
 #pragma once
 
-/// @file pnq/registry/key_entry.h
+/// @file pnq/regis3/key_entry.h
 /// @brief Registry key tree node - in-memory representation of a registry key
 
-#include <pnq/registry/types.h>
-#include <pnq/registry/value.h>
+#include <pnq/regis3/types.h>
+#include <pnq/regis3/value.h>
 #include <pnq/ref_counted.h>
 #include <pnq/string.h>
 #include <pnq/pnq.h>
@@ -16,7 +16,7 @@
 
 namespace pnq
 {
-    namespace registry
+    namespace regis3
     {
         /// In-memory representation of a registry key.
         ///
@@ -403,5 +403,5 @@ namespace pnq
             bool m_remove_flag;
         };
 
-    } // namespace registry
+    } // namespace regis3
 } // namespace pnq
