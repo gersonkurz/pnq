@@ -113,6 +113,30 @@ settings.save("config.toml");                    // serializes to TOML
 
 The struct hierarchy maps directly to TOML sections. Enums work too with `enumAsString`/`enumFromString` hooks. Documentation coming - but the pattern above is the whole idea.
 
+## SQLite wrapper (opt-in)
+
+Header-only SQLite wrapper that activates only when you have SQLite:
+
+```cpp
+#include <sqlite3.h>    // you provide this
+#include <pnq/pnq.h>    // pnq::sqlite:: now available
+
+pnq::sqlite::Database db;
+db.open("myapp.db");
+
+pnq::sqlite::Statement stmt{db, "SELECT name FROM users WHERE id=?"};
+stmt.bind(42);
+while (stmt.next()) {
+    auto name = stmt.get_text(0);
+}
+
+pnq::sqlite::Transaction tx{db};
+tx.execute("INSERT INTO users VALUES (?, ?)", 1, "alice");
+tx.commit();  // auto-rollback if you don't
+```
+
+No sqlite3.h? The headers are empty - zero compile overhead, no link errors. The trick is `#if __has_include(<sqlite3.h>)`.
+
 ## Console output
 
 Handles the quirks of Win32 console output better than `printf()` and friends. If you ever tried to print a Euro symbol (€) on the Windows command line and got garbage, you know the pain. This actually works.

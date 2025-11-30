@@ -97,4 +97,6 @@ namespace pnq
 #include <pnq/config/typed_vector_value.h>
 #include <pnq/config/value_interface.h>
 
+#include <pnq/sqlite/sqlite.h>
+
 namespace fs = std::filesystem;
