@@ -3,11 +3,62 @@
 /// @file pnq/regis3/types.h
 /// @brief Foundation types for pnq::regis3 - enums, constants, forward declarations
 
+#include <pnq/platform.h>
+
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+// ============================================================================
+// Windows Registry Type Constants
+// ============================================================================
+// On Windows, these come from <Windows.h>. On other platforms, we define them
+// ourselves with identical values to enable .REG file parsing/generation.
+
+#ifndef REG_NONE
+    #define REG_NONE                        0
+#endif
+#ifndef REG_SZ
+    #define REG_SZ                          1
+#endif
+#ifndef REG_EXPAND_SZ
+    #define REG_EXPAND_SZ                   2
+#endif
+#ifndef REG_BINARY
+    #define REG_BINARY                      3
+#endif
+#ifndef REG_DWORD
+    #define REG_DWORD                       4
+#endif
+#ifndef REG_DWORD_LITTLE_ENDIAN
+    #define REG_DWORD_LITTLE_ENDIAN         4
+#endif
+#ifndef REG_DWORD_BIG_ENDIAN
+    #define REG_DWORD_BIG_ENDIAN            5
+#endif
+#ifndef REG_LINK
+    #define REG_LINK                        6
+#endif
+#ifndef REG_MULTI_SZ
+    #define REG_MULTI_SZ                    7
+#endif
+#ifndef REG_RESOURCE_LIST
+    #define REG_RESOURCE_LIST               8
+#endif
+#ifndef REG_FULL_RESOURCE_DESCRIPTOR
+    #define REG_FULL_RESOURCE_DESCRIPTOR    9
+#endif
+#ifndef REG_RESOURCE_REQUIREMENTS_LIST
+    #define REG_RESOURCE_REQUIREMENTS_LIST  10
+#endif
+#ifndef REG_QWORD
+    #define REG_QWORD                       11
+#endif
+#ifndef REG_QWORD_LITTLE_ENDIAN
+    #define REG_QWORD_LITTLE_ENDIAN         11
+#endif
 
 namespace pnq
 {
@@ -24,7 +75,7 @@ namespace pnq
         class registry_exporter;
 
         // =====================================================================
-        // Constants
+        // pnq-specific Constants
         // =====================================================================
 
         /// Sentinel value indicating unknown/uninitialized registry value type.
