@@ -368,6 +368,28 @@ namespace pnq
                 return default_value;
             }
 
+            /// Get a QWORD value.
+            uint64_t get_qword(std::string_view name, uint64_t default_value = 0) const
+            {
+                value v;
+                if (get(name, v))
+                {
+                    return v.get_qword(default_value);
+                }
+                return default_value;
+            }
+
+            /// Get a multi-string value.
+            std::vector<std::string> get_multi_string(std::string_view name) const
+            {
+                value v;
+                if (get(name, v))
+                {
+                    return v.get_multi_string();
+                }
+                return {};
+            }
+
             /// Set a string value (REG_SZ).
             bool set_string(std::string_view name, std::string_view val)
             {
@@ -382,6 +404,47 @@ namespace pnq
                 value v{name};
                 v.set_dword(val);
                 return set(name, v);
+            }
+
+            /// Set a QWORD value.
+            bool set_qword(std::string_view name, uint64_t val)
+            {
+                value v{name};
+                v.set_qword(val);
+                return set(name, v);
+            }
+
+            /// Set an expand string value (REG_EXPAND_SZ).
+            bool set_expand_string(std::string_view name, std::string_view val)
+            {
+                value v{name};
+                v.set_expanded_string(val);
+                return set(name, v);
+            }
+
+            /// Set a multi-string value (REG_MULTI_SZ).
+            bool set_multi_string(std::string_view name, const std::vector<std::string>& val)
+            {
+                value v{name};
+                v.set_multi_string(val);
+                return set(name, v);
+            }
+
+            /// Delete a value from this key.
+            bool delete_value(std::string_view name)
+            {
+                if (!open_for_writing())
+                    return false;
+
+                LSTATUS result = ::RegDeleteValueW(m_key, wstr_param{name});
+                if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
+                    return true;
+
+                logging::report_windows_error(
+                    PNQ_FUNCTION_CONTEXT,
+                    result,
+                    std::format("RegDeleteValue({}) failed", name));
+                return false;
             }
 
             // =================================================================
