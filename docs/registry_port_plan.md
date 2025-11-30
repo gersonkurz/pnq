@@ -266,7 +266,7 @@ pnq/registry.h                    <- Main include, pulls everything in order
 - [x] Milestone 4: Parser Infrastructure (parser.h) - DONE
 - [x] Milestone 5: Import (importer.h) - DONE
 - [x] Milestone 6: Export (exporter.h) - DONE
-- [ ] Milestone 7: Main Header & Tests
+- [x] Milestone 7: Main Header & Tests - DONE (193 assertions)
 
 ---
 
