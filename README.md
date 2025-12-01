@@ -1,4 +1,6 @@
-# pnq
+<p align="center">
+  <img src="logo.png" alt="engramma logo" width="1024"/>
+</p>
 
 Small C++23 header-only library used in my projects that I find useful, and that is provided to the public in MIT license form in the hope it will be useful to you, too!
 
