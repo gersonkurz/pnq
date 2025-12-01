@@ -145,7 +145,7 @@ namespace pnq
                 m_items.clear();
             }
 
-            void addChildItem(ValueInterface *item) override
+            void addChildItem(ValueInterface * /*item*/) override
             {
                 // TypedValueVector manages its own children, ignore external additions
             }
