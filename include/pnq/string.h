@@ -1,9 +1,17 @@
 #pragma once
 
+#include <pnq/platform.h>
 #include <string>
 #include <vector>
 #include <charconv>
+#include <cctype>
+#include <cstring>
+
+#ifdef PNQ_PLATFORM_WINDOWS
 #include <Windows.h>
+#else
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 namespace pnq
 {
@@ -132,16 +140,144 @@ namespace pnq
         inline std::string uppercase(std::string_view text)
         {
             std::string result{text};
+#ifdef PNQ_PLATFORM_WINDOWS
             _strupr_s(result.data(), result.size() + 1);
+#else
+            for (auto &c : result)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+#endif
             return result;
+        }
+
+        /// Convert UTF-8 string to uppercase (Unicode-aware, locale-sensitive).
+        /// @param text UTF-8 encoded input string
+        /// @return uppercase UTF-8 string
+        inline std::string uppercase_unicode(std::string_view text)
+        {
+            if (text.empty())
+                return {};
+
+#ifdef PNQ_PLATFORM_WINDOWS
+            // UTF-8 -> UTF-16
+            int wide_len = MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0);
+            if (wide_len <= 0)
+                return std::string{text};
+
+            std::wstring wide(wide_len, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), wide.data(), wide_len);
+
+            // Uppercase
+            int result_len = LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, wide.data(), wide_len, nullptr, 0, nullptr, nullptr, 0);
+            if (result_len <= 0)
+                return std::string{text};
+
+            std::wstring upper(result_len, L'\0');
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, wide.data(), wide_len, upper.data(), result_len, nullptr, nullptr, 0);
+
+            // UTF-16 -> UTF-8
+            int utf8_len = WideCharToMultiByte(CP_UTF8, 0, upper.data(), result_len, nullptr, 0, nullptr, nullptr);
+            if (utf8_len <= 0)
+                return std::string{text};
+
+            std::string result(utf8_len, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, upper.data(), result_len, result.data(), utf8_len, nullptr, nullptr);
+            return result;
+#else
+            CFStringRef cfstr = CFStringCreateWithBytes(nullptr, (const UInt8 *)text.data(), text.size(), kCFStringEncodingUTF8, false);
+            if (!cfstr)
+                return std::string{text};
+
+            CFMutableStringRef mutable_str = CFStringCreateMutableCopy(nullptr, 0, cfstr);
+            CFRelease(cfstr);
+            if (!mutable_str)
+                return std::string{text};
+
+            CFStringUppercase(mutable_str, nullptr);
+
+            CFIndex len = CFStringGetMaximumSizeForEncoding(CFStringGetLength(mutable_str), kCFStringEncodingUTF8) + 1;
+            std::string result(len, '\0');
+            if (!CFStringGetCString(mutable_str, result.data(), len, kCFStringEncodingUTF8))
+            {
+                CFRelease(mutable_str);
+                return std::string{text};
+            }
+            result.resize(std::strlen(result.c_str()));
+
+            CFRelease(mutable_str);
+            return result;
+#endif
         }
 
         /// Convert string to lowercase (ASCII only).
         inline std::string lowercase(std::string_view text)
         {
             std::string result{text};
+#ifdef PNQ_PLATFORM_WINDOWS
             _strlwr_s(result.data(), result.size() + 1);
+#else
+            for (auto &c : result)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+#endif
             return result;
+        }
+
+        /// Convert UTF-8 string to lowercase (Unicode-aware, locale-sensitive).
+        /// @param text UTF-8 encoded input string
+        /// @return lowercase UTF-8 string
+        inline std::string lowercase_unicode(std::string_view text)
+        {
+            if (text.empty())
+                return {};
+
+#ifdef PNQ_PLATFORM_WINDOWS
+            // UTF-8 -> UTF-16
+            int wide_len = MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0);
+            if (wide_len <= 0)
+                return std::string{text};
+
+            std::wstring wide(wide_len, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), wide.data(), wide_len);
+
+            // Lowercase
+            int result_len = LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_LOWERCASE, wide.data(), wide_len, nullptr, 0, nullptr, nullptr, 0);
+            if (result_len <= 0)
+                return std::string{text};
+
+            std::wstring lower(result_len, L'\0');
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_LOWERCASE, wide.data(), wide_len, lower.data(), result_len, nullptr, nullptr, 0);
+
+            // UTF-16 -> UTF-8
+            int utf8_len = WideCharToMultiByte(CP_UTF8, 0, lower.data(), result_len, nullptr, 0, nullptr, nullptr);
+            if (utf8_len <= 0)
+                return std::string{text};
+
+            std::string result(utf8_len, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, lower.data(), result_len, result.data(), utf8_len, nullptr, nullptr);
+            return result;
+#else
+            CFStringRef cfstr = CFStringCreateWithBytes(nullptr, (const UInt8 *)text.data(), text.size(), kCFStringEncodingUTF8, false);
+            if (!cfstr)
+                return std::string{text};
+
+            CFMutableStringRef mutable_str = CFStringCreateMutableCopy(nullptr, 0, cfstr);
+            CFRelease(cfstr);
+            if (!mutable_str)
+                return std::string{text};
+
+            CFStringLowercase(mutable_str, nullptr);
+
+            CFIndex len = CFStringGetMaximumSizeForEncoding(CFStringGetLength(mutable_str), kCFStringEncodingUTF8) + 1;
+            std::string result(len, '\0');
+            if (!CFStringGetCString(mutable_str, result.data(), len, kCFStringEncodingUTF8))
+            {
+                CFRelease(mutable_str);
+                return std::string{text};
+            }
+            result.resize(std::strlen(result.c_str()));
+
+            CFRelease(mutable_str);
+            return result;
+#endif
         }
 
         /// Split string by separator characters, optionally handling quoted strings.
@@ -336,6 +472,51 @@ namespace pnq
         }
 
         // For starts_with/ends_with, use std::string_view::starts_with() / ends_with() (C++20)
+
+        /// Strip leading characters from string.
+        /// @param text the input string
+        /// @param chars characters to strip (default: whitespace)
+        /// @return string_view with leading chars removed
+        inline std::string_view lstrip(std::string_view text, std::string_view chars = " \t\r\n")
+        {
+            auto pos = text.find_first_not_of(chars);
+            return pos == std::string_view::npos ? std::string_view{} : text.substr(pos);
+        }
+
+        /// Strip trailing characters from string.
+        /// @param text the input string
+        /// @param chars characters to strip (default: whitespace)
+        /// @return string_view with trailing chars removed
+        inline std::string_view rstrip(std::string_view text, std::string_view chars = " \t\r\n")
+        {
+            auto pos = text.find_last_not_of(chars);
+            return pos == std::string_view::npos ? std::string_view{} : text.substr(0, pos + 1);
+        }
+
+        /// Strip leading and trailing characters from string.
+        /// @param text the input string
+        /// @param chars characters to strip (default: whitespace)
+        /// @return string_view with leading and trailing chars removed
+        inline std::string_view strip(std::string_view text, std::string_view chars = " \t\r\n")
+        {
+            return rstrip(lstrip(text, chars), chars);
+        }
+
+        /// Split string by separator characters, stripping each element.
+        /// @param svtext the input string to split
+        /// @param svseparators characters that act as separators
+        /// @param handle_quotation_marks if true, quoted strings are preserved as single elements
+        /// @param strip_chars characters to strip from each element (default: whitespace)
+        /// @return vector of stripped string elements
+        inline std::vector<std::string> split_stripped(std::string_view svtext, std::string_view svseparators, bool handle_quotation_marks = false, std::string_view strip_chars = " \t\r\n")
+        {
+            auto result = split(svtext, svseparators, handle_quotation_marks);
+            for (auto &item : result)
+            {
+                item = strip(item, strip_chars);
+            }
+            return result;
+        }
 
         /// Case-insensitive starts_with check.
         inline bool starts_with_nocase(std::string_view a, std::string_view b)

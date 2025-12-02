@@ -342,6 +342,76 @@ TEST_CASE("string::split_at_last_occurence", "[string]") {
     }
 }
 
+TEST_CASE("string::strip", "[string]") {
+    using pnq::string::strip;
+    using pnq::string::lstrip;
+    using pnq::string::rstrip;
+
+    SECTION("strip both sides") {
+        REQUIRE(std::string(strip("  hello  ")) == "hello");
+        REQUIRE(std::string(strip("\t\nhello\r\n")) == "hello");
+        REQUIRE(std::string(strip("   ")) == "");
+        REQUIRE(std::string(strip("")) == "");
+        REQUIRE(std::string(strip("hello")) == "hello");
+    }
+
+    SECTION("lstrip") {
+        REQUIRE(std::string(lstrip("  hello  ")) == "hello  ");
+        REQUIRE(std::string(lstrip("\t\nhello")) == "hello");
+        REQUIRE(std::string(lstrip("   ")) == "");
+        REQUIRE(std::string(lstrip("hello")) == "hello");
+    }
+
+    SECTION("rstrip") {
+        REQUIRE(std::string(rstrip("  hello  ")) == "  hello");
+        REQUIRE(std::string(rstrip("hello\r\n")) == "hello");
+        REQUIRE(std::string(rstrip("   ")) == "");
+        REQUIRE(std::string(rstrip("hello")) == "hello");
+    }
+
+    SECTION("custom chars") {
+        REQUIRE(std::string(strip("xxhelloxx", "x")) == "hello");
+        REQUIRE(std::string(lstrip("##value", "#")) == "value");
+        REQUIRE(std::string(rstrip("value##", "#")) == "value");
+    }
+}
+
+TEST_CASE("string::split_stripped", "[string]") {
+    using pnq::string::split_stripped;
+
+    SECTION("basic split with stripping") {
+        auto result = split_stripped("a , b , c", ",");
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[0] == "a");
+        REQUIRE(result[1] == "b");
+        REQUIRE(result[2] == "c");
+    }
+
+    SECTION("mixed whitespace") {
+        auto result = split_stripped("  foo  ;\t bar \t; baz  ", ";");
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[0] == "foo");
+        REQUIRE(result[1] == "bar");
+        REQUIRE(result[2] == "baz");
+    }
+
+    SECTION("empty elements become empty strings") {
+        auto result = split_stripped("a ,  , c", ",");
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[0] == "a");
+        REQUIRE(result[1] == "");
+        REQUIRE(result[2] == "c");
+    }
+
+    SECTION("custom strip chars") {
+        auto result = split_stripped("xax,xbx,xcx", ",", false, "x");
+        REQUIRE(result.size() == 3);
+        REQUIRE(result[0] == "a");
+        REQUIRE(result[1] == "b");
+        REQUIRE(result[2] == "c");
+    }
+}
+
 TEST_CASE("string::Writer", "[string_writer]") {
     using pnq::string::Writer;
 
