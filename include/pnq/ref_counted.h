@@ -198,6 +198,10 @@ namespace pnq
         auto end() { return m_items.end(); }
         auto begin() const { return m_items.begin(); }
         auto end() const { return m_items.end(); }
+        auto rbegin() { return m_items.rbegin(); }
+        auto rend() { return m_items.rend(); }
+        auto rbegin() const { return m_items.rbegin(); }
+        auto rend() const { return m_items.rend(); }
 
     private:
         std::vector<T> m_items;
