@@ -795,6 +795,66 @@ TEST_CASE("file::get_extension", "[file]") {
     }
 }
 
+TEST_CASE("file::match", "[file]") {
+    namespace f = pnq::file;
+
+    SECTION("exact match") {
+        REQUIRE(f::match("hello", "hello"));
+        REQUIRE_FALSE(f::match("hello", "world"));
+    }
+
+    SECTION("case insensitive") {
+        REQUIRE(f::match("Hello", "HELLO"));
+        REQUIRE(f::match("WORLD", "world"));
+        REQUIRE(f::match("Test.TXT", "test.txt"));
+    }
+
+    SECTION("? matches single character") {
+        REQUIRE(f::match("h?llo", "hello"));
+        REQUIRE(f::match("h?llo", "hallo"));
+        REQUIRE_FALSE(f::match("h?llo", "hllo"));
+        REQUIRE_FALSE(f::match("h?llo", "heello"));
+    }
+
+    SECTION("* matches any sequence") {
+        REQUIRE(f::match("*.txt", "file.txt"));
+        REQUIRE(f::match("*.txt", "document.txt"));
+        REQUIRE(f::match("file.*", "file.exe"));
+        REQUIRE(f::match("*", "anything"));
+        REQUIRE(f::match("*", ""));
+    }
+
+    SECTION("* matches zero characters") {
+        REQUIRE(f::match("a*b", "ab"));
+        REQUIRE(f::match("*test", "test"));
+        REQUIRE(f::match("test*", "test"));
+    }
+
+    SECTION("multiple wildcards") {
+        REQUIRE(f::match("*.tar.gz", "archive.tar.gz"));
+        REQUIRE(f::match("*.*.*", "a.b.c"));
+        REQUIRE(f::match("a*b*c", "aXXbYYc"));
+        REQUIRE(f::match("a*b*c", "abc"));
+    }
+
+    SECTION("combined ? and *") {
+        REQUIRE(f::match("?est*", "test.txt"));
+        REQUIRE(f::match("*.??", "file.cc"));
+        REQUIRE_FALSE(f::match("*.??", "file.cpp"));
+    }
+
+    SECTION("empty patterns and text") {
+        REQUIRE(f::match("", ""));
+        REQUIRE_FALSE(f::match("", "text"));
+        REQUIRE_FALSE(f::match("pattern", ""));
+    }
+
+    SECTION("trailing stars consumed") {
+        REQUIRE(f::match("test***", "test"));
+        REQUIRE(f::match("a*****", "abc"));
+    }
+}
+
 TEST_CASE("file::exists", "[file]") {
     namespace f = pnq::file;
 
