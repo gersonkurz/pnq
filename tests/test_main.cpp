@@ -965,6 +965,165 @@ TEST_CASE("RefCountImpl", "[ref_counted]") {
     }
 }
 
+TEST_CASE("RefCountedVector", "[ref_counted]") {
+    using Vec = pnq::RefCountedVector<TestRefCounted*>;
+
+    SECTION("empty vector") {
+        TestRefCounted::instance_count = 0;
+        {
+            Vec v;
+            REQUIRE(v.empty());
+            REQUIRE(v.size() == 0);
+        }
+        REQUIRE(TestRefCounted::instance_count == 0);
+    }
+
+    SECTION("push_back retains, destructor releases") {
+        TestRefCounted::instance_count = 0;
+        auto* obj = new TestRefCounted();
+        REQUIRE(TestRefCounted::instance_count == 1);
+
+        {
+            Vec v;
+            v.push_back(obj);
+            REQUIRE(v.size() == 1);
+            REQUIRE(v[0] == obj);
+
+            obj->release();  // release our reference
+            REQUIRE(TestRefCounted::instance_count == 1);  // vector still holds it
+        }
+        REQUIRE(TestRefCounted::instance_count == 0);  // vector released it
+    }
+
+    SECTION("pop_back releases") {
+        TestRefCounted::instance_count = 0;
+        auto* obj = new TestRefCounted();
+
+        Vec v;
+        v.push_back(obj);
+        obj->release();
+        REQUIRE(TestRefCounted::instance_count == 1);
+
+        v.pop_back();
+        REQUIRE(v.empty());
+        REQUIRE(TestRefCounted::instance_count == 0);
+    }
+
+    SECTION("clear releases all") {
+        TestRefCounted::instance_count = 0;
+        auto* a = new TestRefCounted();
+        auto* b = new TestRefCounted();
+
+        Vec v;
+        v.push_back(a);
+        v.push_back(b);
+        a->release();
+        b->release();
+        REQUIRE(TestRefCounted::instance_count == 2);
+
+        v.clear();
+        REQUIRE(v.empty());
+        REQUIRE(TestRefCounted::instance_count == 0);
+    }
+
+    SECTION("copy constructor retains") {
+        TestRefCounted::instance_count = 0;
+        auto* obj = new TestRefCounted();
+
+        Vec v1;
+        v1.push_back(obj);
+        obj->release();
+        REQUIRE(TestRefCounted::instance_count == 1);
+
+        {
+            Vec v2(v1);
+            REQUIRE(v2.size() == 1);
+            REQUIRE(v2[0] == obj);
+            REQUIRE(TestRefCounted::instance_count == 1);  // same object, refcount=2
+        }
+        REQUIRE(TestRefCounted::instance_count == 1);  // v1 still holds it
+    }
+
+    SECTION("copy assignment retains and releases") {
+        TestRefCounted::instance_count = 0;
+        auto* a = new TestRefCounted();
+        auto* b = new TestRefCounted();
+
+        Vec v1, v2;
+        v1.push_back(a);
+        v2.push_back(b);
+        a->release();
+        b->release();
+        REQUIRE(TestRefCounted::instance_count == 2);
+
+        v2 = v1;
+        REQUIRE(TestRefCounted::instance_count == 1);  // b was released
+        REQUIRE(v2[0] == a);
+    }
+
+    SECTION("move constructor transfers ownership") {
+        TestRefCounted::instance_count = 0;
+        auto* obj = new TestRefCounted();
+
+        Vec v1;
+        v1.push_back(obj);
+        obj->release();
+
+        Vec v2(std::move(v1));
+        REQUIRE(v2.size() == 1);
+        REQUIRE(v1.empty());
+        REQUIRE(TestRefCounted::instance_count == 1);
+    }
+
+    SECTION("move assignment transfers ownership") {
+        TestRefCounted::instance_count = 0;
+        auto* a = new TestRefCounted();
+        auto* b = new TestRefCounted();
+
+        Vec v1, v2;
+        v1.push_back(a);
+        v2.push_back(b);
+        a->release();
+        b->release();
+
+        v2 = std::move(v1);
+        REQUIRE(v1.empty());
+        REQUIRE(v2[0] == a);
+        REQUIRE(TestRefCounted::instance_count == 1);  // b was released
+    }
+
+    SECTION("iteration") {
+        TestRefCounted::instance_count = 0;
+        auto* a = new TestRefCounted();
+        auto* b = new TestRefCounted();
+
+        Vec v;
+        v.push_back(a);
+        v.push_back(b);
+        a->release();
+        b->release();
+
+        int count = 0;
+        for (auto* p : v) {
+            REQUIRE(p != nullptr);
+            ++count;
+        }
+        REQUIRE(count == 2);
+    }
+
+    SECTION("at with bounds check") {
+        TestRefCounted::instance_count = 0;
+        auto* obj = new TestRefCounted();
+
+        Vec v;
+        v.push_back(obj);
+        obj->release();
+
+        REQUIRE(v.at(0) == obj);
+        REQUIRE_THROWS_AS(v.at(1), std::out_of_range);
+    }
+}
+
 TEST_CASE("environment_variables::get", "[environment_variables]") {
     namespace ev = pnq::environment_variables;
 
