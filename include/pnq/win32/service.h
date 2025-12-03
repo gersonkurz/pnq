@@ -1,5 +1,10 @@
 #pragma once
 
+#include <chrono>
+#include <optional>
+#include <thread>
+#include <vector>
+
 #include <pnq/pnq.h>
 #include <pnq/win32/wstr_param.h>
 
@@ -7,6 +12,18 @@ namespace pnq
 {
     namespace win32
     {
+        /// Service configuration data returned by Service::query_config().
+        struct ServiceConfig
+        {
+            std::string name;
+            std::string display_name;
+            std::string description;
+            std::string binary_path;
+            std::string account;
+            std::vector<std::string> dependencies;
+            DWORD start_type = 0;
+            DWORD service_type = 0;
+        };
         /// Base RAII wrapper for SC_HANDLE (service control handles).
         /// Logs errors on CloseServiceHandle failure.
         class ServiceHandle
@@ -110,6 +127,28 @@ namespace pnq
             /// @param desired_access access rights for the service
             /// @return Service wrapper (check with operator bool)
             Service open_service(std::string_view service_name, DWORD desired_access) const;
+
+            /// Create a new service.
+            /// @param service_name internal service name
+            /// @param display_name display name shown in services.msc
+            /// @param binary_path path to service executable
+            /// @param service_type SERVICE_WIN32_OWN_PROCESS, etc.
+            /// @param start_type SERVICE_AUTO_START, SERVICE_DEMAND_START, etc.
+            /// @param desired_access access rights for returned handle (default SERVICE_ALL_ACCESS)
+            /// @return Service wrapper (check with operator bool)
+            Service create_service(
+                std::string_view service_name,
+                std::string_view display_name,
+                std::string_view binary_path,
+                DWORD service_type = SERVICE_WIN32_OWN_PROCESS,
+                DWORD start_type = SERVICE_DEMAND_START,
+                DWORD desired_access = SERVICE_ALL_ACCESS) const;
+
+            /// Create a new service with full configuration.
+            /// @param config service configuration
+            /// @param desired_access access rights for returned handle (default SERVICE_ALL_ACCESS)
+            /// @return Service wrapper (check with operator bool)
+            Service create_service(const ServiceConfig& config, DWORD desired_access = SERVICE_ALL_ACCESS) const;
         };
 
         /// RAII wrapper for Windows Service handle.
@@ -213,7 +252,181 @@ namespace pnq
                 return status.dwCurrentState;
             }
 
+            /// Wait until service reaches stopped state.
+            /// @param timeout maximum time to wait
+            /// @param poll_interval time between status checks
+            /// @return true if service is stopped, false on timeout
+            bool wait_until_stopped(
+                std::chrono::milliseconds timeout = std::chrono::seconds{30},
+                std::chrono::milliseconds poll_interval = std::chrono::milliseconds{100}) const
+            {
+                return wait_for_state(SERVICE_STOPPED, timeout, poll_interval);
+            }
+
+            /// Wait until service reaches running state.
+            /// @param timeout maximum time to wait
+            /// @param poll_interval time between status checks
+            /// @return true if service is running, false on timeout
+            bool wait_until_running(
+                std::chrono::milliseconds timeout = std::chrono::seconds{30},
+                std::chrono::milliseconds poll_interval = std::chrono::milliseconds{100}) const
+            {
+                return wait_for_state(SERVICE_RUNNING, timeout, poll_interval);
+            }
+
+            /// Query full service configuration.
+            /// @return ServiceConfig if successful, nullopt on error
+            std::optional<ServiceConfig> query_config() const
+            {
+                DWORD needed = 0;
+                QueryServiceConfigW(m_handle, nullptr, 0, &needed);
+                if (needed == 0)
+                {
+                    PNQ_LOG_LAST_ERROR("QueryServiceConfig('{}') failed", m_name);
+                    return std::nullopt;
+                }
+
+                std::vector<BYTE> buffer(needed);
+                auto* config = reinterpret_cast<QUERY_SERVICE_CONFIGW*>(buffer.data());
+
+                if (!QueryServiceConfigW(m_handle, config, needed, &needed))
+                {
+                    PNQ_LOG_LAST_ERROR("QueryServiceConfig('{}') failed", m_name);
+                    return std::nullopt;
+                }
+
+                ServiceConfig result;
+                result.name = m_name;
+                result.display_name = config->lpDisplayName ? string::encode_as_utf8(config->lpDisplayName) : "";
+                result.binary_path = config->lpBinaryPathName ? string::encode_as_utf8(config->lpBinaryPathName) : "";
+                result.account = config->lpServiceStartName ? string::encode_as_utf8(config->lpServiceStartName) : "";
+                result.start_type = config->dwStartType;
+                result.service_type = config->dwServiceType;
+
+                // Parse dependencies (double-null-terminated string)
+                if (config->lpDependencies)
+                {
+                    const wchar_t* dep = config->lpDependencies;
+                    while (*dep)
+                    {
+                        result.dependencies.push_back(string::encode_as_utf8(dep));
+                        dep += wcslen(dep) + 1;
+                    }
+                }
+
+                // Query description separately
+                result.description = query_description();
+
+                return result;
+            }
+
+            /// Query service description.
+            /// @return description string, empty on error
+            std::string query_description() const
+            {
+                DWORD needed = 0;
+                QueryServiceConfig2W(m_handle, SERVICE_CONFIG_DESCRIPTION, nullptr, 0, &needed);
+                if (needed == 0)
+                    return {};
+
+                std::vector<BYTE> buffer(needed);
+                if (!QueryServiceConfig2W(m_handle, SERVICE_CONFIG_DESCRIPTION, buffer.data(), needed, &needed))
+                    return {};
+
+                auto* desc = reinterpret_cast<SERVICE_DESCRIPTIONW*>(buffer.data());
+                return (desc && desc->lpDescription) ? string::encode_as_utf8(desc->lpDescription) : "";
+            }
+
+            /// Set service description.
+            /// @param description new description text
+            /// @return true if successful
+            bool set_description(std::string_view description) const
+            {
+                std::wstring wide_desc = string::encode_as_utf16(description);
+                SERVICE_DESCRIPTIONW desc;
+                desc.lpDescription = const_cast<LPWSTR>(wide_desc.c_str());
+
+                if (!ChangeServiceConfig2W(m_handle, SERVICE_CONFIG_DESCRIPTION, &desc))
+                {
+                    PNQ_LOG_LAST_ERROR("ChangeServiceConfig2('{}', DESCRIPTION) failed", m_name);
+                    return false;
+                }
+                return true;
+            }
+
+            /// Change service configuration.
+            /// Pass SERVICE_NO_CHANGE for DWORD params or nullptr/empty for string params to keep existing values.
+            /// @return true if successful
+            bool change_config(
+                DWORD service_type,
+                DWORD start_type,
+                DWORD error_control,
+                std::string_view binary_path = {},
+                std::string_view load_order_group = {},
+                std::string_view dependencies = {},
+                std::string_view account = {},
+                std::string_view password = {},
+                std::string_view display_name = {}) const
+            {
+                auto to_lpcwstr = [](std::string_view sv, std::wstring& storage) -> LPCWSTR {
+                    if (sv.empty()) return nullptr;
+                    storage = string::encode_as_utf16(sv);
+                    return storage.c_str();
+                };
+
+                std::wstring w_binary, w_group, w_deps, w_account, w_password, w_display;
+
+                if (!ChangeServiceConfigW(
+                    m_handle,
+                    service_type,
+                    start_type,
+                    error_control,
+                    to_lpcwstr(binary_path, w_binary),
+                    to_lpcwstr(load_order_group, w_group),
+                    nullptr, // tag id
+                    to_lpcwstr(dependencies, w_deps),
+                    to_lpcwstr(account, w_account),
+                    to_lpcwstr(password, w_password),
+                    to_lpcwstr(display_name, w_display)))
+                {
+                    PNQ_LOG_LAST_ERROR("ChangeServiceConfig('{}') failed", m_name);
+                    return false;
+                }
+                return true;
+            }
+
+            /// Delete the service.
+            /// @return true if deleted or already marked for deletion
+            bool remove() const
+            {
+                if (!DeleteService(m_handle))
+                {
+                    DWORD err = GetLastError();
+                    if (err != ERROR_SERVICE_MARKED_FOR_DELETE)
+                    {
+                        PNQ_LOG_WIN_ERROR(err, "DeleteService('{}') failed", m_name);
+                        return false;
+                    }
+                }
+                return true;
+            }
+
         private:
+            bool wait_for_state(
+                DWORD target_state,
+                std::chrono::milliseconds timeout,
+                std::chrono::milliseconds poll_interval) const
+            {
+                auto deadline = std::chrono::steady_clock::now() + timeout;
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    if (current_state() == target_state)
+                        return true;
+                    std::this_thread::sleep_for(poll_interval);
+                }
+                return current_state() == target_state;
+            }
+
             std::string m_name;
         };
 
@@ -223,6 +436,74 @@ namespace pnq
             if (!svc)
                 PNQ_LOG_LAST_ERROR("OpenService('{}') failed", service_name);
             return Service(svc, std::string{service_name});
+        }
+
+        inline Service SCM::create_service(
+            std::string_view service_name,
+            std::string_view display_name,
+            std::string_view binary_path,
+            DWORD service_type,
+            DWORD start_type,
+            DWORD desired_access) const
+        {
+            SC_HANDLE svc = CreateServiceW(
+                m_handle,
+                wstr_param(service_name),
+                wstr_param(display_name),
+                desired_access,
+                service_type,
+                start_type,
+                SERVICE_ERROR_NORMAL,
+                wstr_param(binary_path),
+                nullptr,  // load order group
+                nullptr,  // tag id
+                nullptr,  // dependencies
+                nullptr,  // account (LocalSystem)
+                nullptr); // password
+
+            if (!svc)
+                PNQ_LOG_LAST_ERROR("CreateService('{}') failed", service_name);
+            return Service(svc, std::string{service_name});
+        }
+
+        inline Service SCM::create_service(const ServiceConfig& config, DWORD desired_access) const
+        {
+            // Build dependencies as double-null-terminated string
+            std::wstring deps;
+            for (const auto& dep : config.dependencies)
+            {
+                deps += string::encode_as_utf16(dep);
+                deps += L'\0';
+            }
+
+            SC_HANDLE svc = CreateServiceW(
+                m_handle,
+                wstr_param(config.name),
+                wstr_param(config.display_name),
+                desired_access,
+                config.service_type ? config.service_type : SERVICE_WIN32_OWN_PROCESS,
+                config.start_type ? config.start_type : SERVICE_DEMAND_START,
+                SERVICE_ERROR_NORMAL,
+                wstr_param(config.binary_path),
+                nullptr,  // load order group
+                nullptr,  // tag id
+                deps.empty() ? nullptr : deps.c_str(),
+                config.account.empty() ? nullptr : wstr_param(config.account),
+                nullptr); // password
+
+            if (!svc)
+            {
+                PNQ_LOG_LAST_ERROR("CreateService('{}') failed", config.name);
+                return Service(nullptr, config.name);
+            }
+
+            Service service(svc, config.name);
+
+            // Set description if provided
+            if (!config.description.empty())
+                service.set_description(config.description);
+
+            return service;
         }
 
     } // namespace win32

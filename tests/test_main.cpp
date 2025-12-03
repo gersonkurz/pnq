@@ -2331,4 +2331,29 @@ TEST_CASE("win32::Service", "[service]") {
             }
         }
     }
+
+    SECTION("query_config") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_CONFIG);
+        REQUIRE(svc);
+
+        auto config = svc.query_config();
+        REQUIRE(config.has_value());
+        REQUIRE(config->name == "Spooler");
+        REQUIRE_FALSE(config->binary_path.empty());
+        REQUIRE(config->service_type != 0);
+    }
+
+    SECTION("query_description") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_CONFIG);
+        REQUIRE(svc);
+
+        // Spooler typically has a description, but we just check it doesn't crash
+        (void)svc.query_description();
+    }
 }
