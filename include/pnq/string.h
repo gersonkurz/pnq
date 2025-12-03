@@ -120,6 +120,26 @@ namespace pnq
             return _strnicmp(a.data(), b.data(), a.size()) == 0;
         }
 
+        /// Case-insensitive find (like std::string::find but ignores case).
+        /// @param haystack string to search in
+        /// @param needle string to search for
+        /// @param start_pos position to start searching from
+        /// @return position of first match, or std::string::npos if not found
+        inline size_t find_nocase(std::string_view haystack, std::string_view needle, size_t start_pos = 0)
+        {
+            if (needle.empty())
+                return start_pos <= haystack.size() ? start_pos : std::string::npos;
+            if (needle.size() > haystack.size())
+                return std::string::npos;
+
+            for (size_t i = start_pos; i <= haystack.size() - needle.size(); ++i)
+            {
+                if (_strnicmp(haystack.data() + i, needle.data(), needle.size()) == 0)
+                    return i;
+            }
+            return std::string::npos;
+        }
+
         /// Join strings with a separator.
         inline std::string join(const std::vector<std::string> &items, std::string_view joiner)
         {
