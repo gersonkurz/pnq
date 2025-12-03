@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <pnq/logging.h>
+#include <pnq/pnq.h>
 
 namespace pnq
 {
@@ -25,7 +25,7 @@ namespace pnq
             {
                 return string::encode_as_utf8(buffer);
             }
-            logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetSystemDirectoryW() failed");
+            PNQ_LOG_LAST_ERROR("GetSystemDirectoryW failed");
             return ".";
         }
 
@@ -37,7 +37,7 @@ namespace pnq
             {
                 return string::encode_as_utf8(buffer);
             }
-            logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetWindowsDirectoryW() failed");
+            PNQ_LOG_LAST_ERROR("GetWindowsDirectoryW failed");
             return ".";
         }
 
@@ -49,7 +49,7 @@ namespace pnq
             {
                 return string::encode_as_utf8(buffer);
             }
-            logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetCurrentDirectoryW() failed");
+            PNQ_LOG_LAST_ERROR("GetCurrentDirectoryW failed");
             return ".";
         }
 
@@ -59,7 +59,7 @@ namespace pnq
             wchar_t buffer[MAX_PATH];
             if (!GetModuleFileNameW(nullptr, buffer, std::size(buffer)))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetModuleFileNameW() failed");
+                PNQ_LOG_LAST_ERROR("GetModuleFileNameW failed");
                 return ".";
             }
             if (const auto last_sep = wcsrchr(buffer, L'\\'))

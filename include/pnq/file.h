@@ -36,7 +36,7 @@ namespace pnq
             if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
                 return false;
 
-            logging::report_windows_error(PNQ_FUNCTION_CONTEXT, error, std::format("GetFileAttributes({}) failed", path));
+            PNQ_LOG_WIN_ERROR(error, "GetFileAttributes('{}') failed", path);
             return false;
         }
 
@@ -50,7 +50,7 @@ namespace pnq
             ::SetFileAttributesW(wide_pathname.c_str(), FILE_ATTRIBUTE_NORMAL);
             if (!::DeleteFileW(wide_pathname.c_str()))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("DeleteFileW({}) failed", pathname));
+                PNQ_LOG_LAST_ERROR("DeleteFileW('{}') failed", pathname);
                 return false;
             }
             return true;

@@ -49,6 +49,16 @@
 // see http://msdn.microsoft.com/de-de/library/b0084kay.aspx
 #define PNQ_FUNCTION_CONTEXT __FUNCTION__ "[" S__LINE__ "]"
 
+/// Log a Windows error with automatic context. Accepts format string with arguments.
+/// Usage: PNQ_LOG_WIN_ERROR(GetLastError(), "CreateFile('{}') failed", filename);
+#define PNQ_LOG_WIN_ERROR(error_code, ...) \
+    pnq::logging::report_windows_error(PNQ_FUNCTION_CONTEXT, error_code, __VA_ARGS__)
+
+/// Log GetLastError() with automatic context. Most common case.
+/// Usage: PNQ_LOG_LAST_ERROR("CreateFile('{}') failed", filename);
+#define PNQ_LOG_LAST_ERROR(...) \
+    pnq::logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), __VA_ARGS__)
+
 /// This macro can be used on classes that should not enable a copy / move constructor / assignment operator
 #define PNQ_DECLARE_NON_COPYABLE(__CLASSNAME__) \
     __CLASSNAME__(const __CLASSNAME__&) = delete; \

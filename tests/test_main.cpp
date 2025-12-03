@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pnq/pnq.h>
 #include <pnq/regis3.h>
+#include <pnq/win32/service.h>
 
 TEST_CASE("Version is defined", "[version]") {
     REQUIRE(pnq::version_major == 0);
@@ -2172,5 +2173,162 @@ TEST_CASE("registry::exporter", "[registry]") {
 
         original->release();
         imported->release();
+    }
+}
+
+// =============================================================================
+// win32::service tests
+// =============================================================================
+
+TEST_CASE("win32::ServiceHandle RAII", "[service]") {
+    using pnq::win32::ServiceHandle;
+
+    SECTION("default constructor") {
+        ServiceHandle h;
+        REQUIRE_FALSE(h);
+        REQUIRE(h.get() == nullptr);
+    }
+
+    SECTION("move constructor") {
+        // Open a real SCM handle to test with
+        SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        REQUIRE(scm != nullptr);
+
+        ServiceHandle h1(scm);
+        REQUIRE(h1);
+
+        ServiceHandle h2(std::move(h1));
+        REQUIRE(h2);
+        REQUIRE_FALSE(h1);  // moved-from is empty
+    }
+
+    SECTION("move assignment") {
+        SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        REQUIRE(scm != nullptr);
+
+        ServiceHandle h1(scm);
+        ServiceHandle h2;
+
+        h2 = std::move(h1);
+        REQUIRE(h2);
+        REQUIRE_FALSE(h1);
+    }
+
+    SECTION("release") {
+        SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        REQUIRE(scm != nullptr);
+
+        ServiceHandle h(scm);
+        SC_HANDLE released = h.release();
+
+        REQUIRE(released == scm);
+        REQUIRE_FALSE(h);
+
+        // Clean up manually since we released
+        CloseServiceHandle(released);
+    }
+
+    SECTION("reset") {
+        SC_HANDLE scm1 = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        SC_HANDLE scm2 = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        REQUIRE(scm1 != nullptr);
+        REQUIRE(scm2 != nullptr);
+
+        ServiceHandle h(scm1);
+        h.reset(scm2);
+
+        REQUIRE(h.get() == scm2);
+        // scm1 was closed by reset
+    }
+}
+
+TEST_CASE("win32::SCM", "[service]") {
+    using pnq::win32::SCM;
+
+    SECTION("default constructor opens with SC_MANAGER_CONNECT") {
+        SCM scm;
+        REQUIRE(scm);
+    }
+
+    SECTION("constructor with access rights") {
+        SCM scm(SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
+        REQUIRE(scm);
+    }
+
+    SECTION("open_service for existing service") {
+        SCM scm;
+        REQUIRE(scm);
+
+        // Spooler service should exist on all Windows systems
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_STATUS);
+        REQUIRE(svc);
+        REQUIRE(svc.name() == "Spooler");
+    }
+
+    SECTION("open_service for non-existent service") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("NonExistentService12345", SERVICE_QUERY_STATUS);
+        REQUIRE_FALSE(svc);
+    }
+}
+
+TEST_CASE("win32::Service", "[service]") {
+    using pnq::win32::SCM;
+    using pnq::win32::Service;
+
+    SECTION("query_status") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_STATUS);
+        REQUIRE(svc);
+
+        SERVICE_STATUS status{};
+        REQUIRE(svc.query_status(status));
+        // Spooler can be running or stopped, but state should be valid
+        REQUIRE((status.dwCurrentState == SERVICE_RUNNING ||
+                 status.dwCurrentState == SERVICE_STOPPED ||
+                 status.dwCurrentState == SERVICE_START_PENDING ||
+                 status.dwCurrentState == SERVICE_STOP_PENDING));
+    }
+
+    SECTION("current_state") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_STATUS);
+        REQUIRE(svc);
+
+        DWORD state = svc.current_state();
+        REQUIRE(state != 0);
+    }
+
+    SECTION("is_running/is_stopped") {
+        SCM scm;
+        REQUIRE(scm);
+
+        auto svc = scm.open_service("Spooler", SERVICE_QUERY_STATUS);
+        REQUIRE(svc);
+
+        // These should not throw/crash - actual values depend on service state
+        (void)svc.is_running();
+        (void)svc.is_stopped();
+    }
+
+    SECTION("example: clean service start pattern") {
+        // This demonstrates the intended usage pattern
+        SCM scm;
+        if (scm)
+        {
+            auto svc = scm.open_service("Spooler", SERVICE_QUERY_STATUS);
+            if (svc)
+            {
+                // Would call svc.start() here if we had SERVICE_START access
+                // For now just verify the pattern works
+                REQUIRE(svc.current_state() != 0);
+            }
+        }
     }
 }

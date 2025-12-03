@@ -46,14 +46,14 @@ namespace pnq
                 nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
+                PNQ_LOG_LAST_ERROR( "CreateFile('{}') failed", filename);
                 return false;
             }
             m_file.set(handle);
             const auto result = ::SetFilePointer(handle, 0, nullptr, FILE_END);
             if (result == INVALID_SET_FILE_POINTER)
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "SetFilePointer() failed");
+                PNQ_LOG_LAST_ERROR( "SetFilePointer failed");
                 m_file.close();
                 return false;
             }
@@ -76,7 +76,7 @@ namespace pnq
                 nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
+                PNQ_LOG_LAST_ERROR( "CreateFile('{}') failed", filename);
                 return false;
             }
             m_file.set(handle);
@@ -99,7 +99,7 @@ namespace pnq
                 nullptr);
             if (!win32::Handle::is_valid(handle))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), std::format("CreateFile({}) failed", filename));
+                PNQ_LOG_LAST_ERROR( "CreateFile('{}') failed", filename);
                 return false;
             }
             m_file.set(handle);
@@ -112,7 +112,7 @@ namespace pnq
             LARGE_INTEGER file_size{0};
             if (!GetFileSizeEx(m_file, &file_size))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetFileSizeEx() failed");
+                PNQ_LOG_LAST_ERROR( "GetFileSizeEx failed");
                 return 0;
             }
             return file_size.QuadPart;
@@ -229,7 +229,7 @@ namespace pnq
             LARGE_INTEGER new_pos{0};
             if (!SetFilePointerEx(m_file, offset, &new_pos, FILE_CURRENT))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "GetFilePosition() failed");
+                PNQ_LOG_LAST_ERROR( "GetFilePosition failed");
             }
             return new_pos.QuadPart;
         }
@@ -244,7 +244,7 @@ namespace pnq
             LARGE_INTEGER new_pos{0};
             if (!SetFilePointerEx(m_file, offset, &new_pos, FILE_BEGIN))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "SetFilePositionEx() failed");
+                PNQ_LOG_LAST_ERROR( "SetFilePositionEx failed");
                 return false;
             }
             return true;
@@ -302,7 +302,7 @@ namespace pnq
             DWORD bytes_written = 0;
             if (!::WriteFile(m_file, memory, static_cast<DWORD>(size), &bytes_written, nullptr))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "WriteFile() failed");
+                PNQ_LOG_LAST_ERROR( "WriteFile failed");
                 return false;
             }
             return true;
@@ -351,7 +351,7 @@ namespace pnq
         {
             if (!::ReadFile(m_file, data, bytes_to_read, &bytes_actually_read, nullptr))
             {
-                logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), "ReadFile() failed");
+                PNQ_LOG_LAST_ERROR( "ReadFile failed");
                 return false;
             }
             return true;

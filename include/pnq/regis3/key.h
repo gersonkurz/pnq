@@ -6,13 +6,10 @@
 #include <pnq/regis3/types.h>
 #include <pnq/regis3/value.h>
 #include <pnq/regis3/iterators.h>
-#include <pnq/string.h>
-#include <pnq/logging.h>
-#include <pnq/win32/wstr_param.h>
 #include <pnq/pnq.h>
+#include <pnq/win32/wstr_param.h>
 
 #include <unordered_map>
-#include <format>
 
 namespace pnq
 {
@@ -197,19 +194,13 @@ namespace pnq
 
                     if (result != ERROR_SUCCESS)
                     {
-                        logging::report_windows_error(
-                            PNQ_FUNCTION_CONTEXT,
-                            result,
-                            std::format("RegCreateKeyEx({}) failed", m_path));
+                        PNQ_LOG_WIN_ERROR(result, "RegCreateKeyEx('{}') failed", m_path);
                         return false;
                     }
                 }
                 else if (result != ERROR_SUCCESS)
                 {
-                    logging::report_windows_error(
-                        PNQ_FUNCTION_CONTEXT,
-                        result,
-                        std::format("RegOpenKeyEx({}) for writing failed", m_path));
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') for writing failed", m_path);
                     return false;
                 }
 
@@ -232,12 +223,7 @@ namespace pnq
                 {
                     LSTATUS result = ::RegCloseKey(m_key);
                     if (result != ERROR_SUCCESS)
-                    {
-                        logging::report_windows_error(
-                            PNQ_FUNCTION_CONTEXT,
-                            result,
-                            "RegCloseKey() failed");
-                    }
+                        PNQ_LOG_WIN_ERROR(result, "RegCloseKey failed");
                 }
                 m_key = nullptr;
                 m_has_write_permissions = false;
@@ -313,10 +299,7 @@ namespace pnq
                     if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
                         return true;
 
-                    logging::report_windows_error(
-                        PNQ_FUNCTION_CONTEXT,
-                        result,
-                        std::format("RegDeleteValue({}) failed", name));
+                    PNQ_LOG_WIN_ERROR(result, "RegDeleteValue('{}') failed", name);
                     return false;
                 }
                 else
@@ -334,10 +317,7 @@ namespace pnq
                     if (result == ERROR_SUCCESS)
                         return true;
 
-                    logging::report_windows_error(
-                        PNQ_FUNCTION_CONTEXT,
-                        result,
-                        std::format("RegSetValueEx({}) failed", name));
+                    PNQ_LOG_WIN_ERROR(result, "RegSetValueEx('{}') failed", name);
                     return false;
                 }
             }
@@ -440,10 +420,7 @@ namespace pnq
                 if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
                     return true;
 
-                logging::report_windows_error(
-                    PNQ_FUNCTION_CONTEXT,
-                    result,
-                    std::format("RegDeleteValue({}) failed", name));
+                PNQ_LOG_WIN_ERROR(result, "RegDeleteValue('{}') failed", name);
                 return false;
             }
 
@@ -463,10 +440,7 @@ namespace pnq
                 if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
                     return true;
 
-                logging::report_windows_error(
-                    PNQ_FUNCTION_CONTEXT,
-                    result,
-                    std::format("RegDeleteTree({}) failed", name));
+                PNQ_LOG_WIN_ERROR(result, "RegDeleteTree('{}') failed", name);
                 return false;
             }
 

@@ -15,13 +15,25 @@ namespace pnq
 {
     namespace logging
     {
-        /// Log a Windows error with context.
+        /// Log a Windows error with context (simple string message).
         /// @param context function or location identifier (use PNQ_FUNCTION_CONTEXT)
         /// @param error_code Windows error code (GetLastError() or HRESULT)
         /// @param message description of what failed
-        inline void report_windows_error(const char *context, DWORD error_code, std::string_view message)
+        inline void report_windows_error(const char* context, DWORD error_code, std::string_view message)
         {
             spdlog::error("[{}] {}: {}", context, message, windows::hresult_as_string(static_cast<HRESULT>(error_code)));
+        }
+
+        /// Log a Windows error with context (format string with arguments).
+        /// @param context function or location identifier (use PNQ_FUNCTION_CONTEXT)
+        /// @param error_code Windows error code (GetLastError() or HRESULT)
+        /// @param fmt format string
+        /// @param args format arguments
+        template<typename... Args>
+        inline void report_windows_error(const char* context, DWORD error_code, std::format_string<Args...> fmt, Args&&... args)
+        {
+            spdlog::error("[{}] {}: {}", context, std::format(fmt, std::forward<Args>(args)...),
+                windows::hresult_as_string(static_cast<HRESULT>(error_code)));
         }
 
         /// Initialize logging with MSVC debug output sink.
