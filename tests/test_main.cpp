@@ -2,6 +2,7 @@
 #include <pnq/pnq.h>
 #include <pnq/regis3.h>
 #include <pnq/win32/service.h>
+#include <pnq/hosts_file.h>
 
 TEST_CASE("Version is defined", "[version]") {
     REQUIRE(pnq::version_major == 0);
@@ -2356,4 +2357,161 @@ TEST_CASE("win32::Service", "[service]") {
         // Spooler typically has a description, but we just check it doesn't crash
         (void)svc.query_description();
     }
+}
+
+// =============================================================================
+// HostsFile tests
+// =============================================================================
+
+TEST_CASE("HostsFile parsing", "[hosts]") {
+    using pnq::HostsFile;
+
+    SECTION("load_from_string parses basic entries") {
+        HostsFile hosts;
+        hosts.load_from_string(
+            "127.0.0.1 localhost\n"
+            "::1 localhost\n"
+            "192.168.1.100 myserver\n"
+        );
+
+        REQUIRE(hosts.line_count() == 3);
+        REQUIRE(hosts.contains("localhost"));
+        REQUIRE(hosts.contains("myserver"));
+        REQUIRE_FALSE(hosts.contains("unknown"));
+    }
+
+    SECTION("find returns entry with IP") {
+        HostsFile hosts;
+        hosts.load_from_string("192.168.1.100 myserver");
+
+        auto entry = hosts.find("myserver");
+        REQUIRE(entry.has_value());
+        REQUIRE(entry->ip == "192.168.1.100");
+        REQUIRE(entry->hostname == "myserver");
+    }
+
+    SECTION("case-insensitive hostname matching") {
+        HostsFile hosts;
+        hosts.load_from_string("192.168.1.100 MyServer");
+
+        REQUIRE(hosts.contains("myserver"));
+        REQUIRE(hosts.contains("MYSERVER"));
+        REQUIRE(hosts.contains("MyServer"));
+    }
+
+    SECTION("parses comments") {
+        HostsFile hosts;
+        hosts.load_from_string("192.168.1.100 myserver # production server");
+
+        auto entry = hosts.find("myserver");
+        REQUIRE(entry.has_value());
+        REQUIRE(entry->comment == "production server");
+    }
+
+    SECTION("skips comment-only lines") {
+        HostsFile hosts;
+        hosts.load_from_string(
+            "# This is a comment\n"
+            "192.168.1.100 myserver\n"
+            "   # Indented comment\n"
+        );
+
+        REQUIRE(hosts.line_count() == 3);
+        auto entries = hosts.entries();
+        REQUIRE(entries.size() == 1);
+        REQUIRE(entries[0].hostname == "myserver");
+    }
+
+    SECTION("handles multiple hostnames per line") {
+        HostsFile hosts;
+        hosts.load_from_string("192.168.1.100 server1 server2 server3");
+
+        REQUIRE(hosts.contains("server1"));
+        REQUIRE(hosts.contains("server2"));
+        REQUIRE(hosts.contains("server3"));
+
+        auto entries = hosts.entries();
+        REQUIRE(entries.size() == 3);
+    }
+
+    SECTION("skips blank lines") {
+        HostsFile hosts;
+        hosts.load_from_string(
+            "\n"
+            "192.168.1.100 myserver\n"
+            "\n"
+        );
+
+        auto entries = hosts.entries();
+        REQUIRE(entries.size() == 1);
+    }
+}
+
+TEST_CASE("HostsFile modification", "[hosts]") {
+    using pnq::HostsFile;
+
+    SECTION("set adds new entry") {
+        HostsFile hosts;
+        hosts.load_from_string("127.0.0.1 localhost");
+
+        hosts.set("newhost", "10.0.0.1");
+
+        REQUIRE(hosts.contains("newhost"));
+        auto entry = hosts.find("newhost");
+        REQUIRE(entry->ip == "10.0.0.1");
+    }
+
+    SECTION("set updates existing entry") {
+        HostsFile hosts;
+        hosts.load_from_string("192.168.1.100 myserver");
+
+        hosts.set("myserver", "10.0.0.1", "updated");
+
+        auto entry = hosts.find("myserver");
+        REQUIRE(entry->ip == "10.0.0.1");
+        REQUIRE(entry->comment == "updated");
+    }
+
+    SECTION("remove deletes entry") {
+        HostsFile hosts;
+        hosts.load_from_string(
+            "127.0.0.1 localhost\n"
+            "192.168.1.100 myserver\n"
+        );
+
+        bool removed = hosts.remove("myserver");
+
+        REQUIRE(removed);
+        REQUIRE_FALSE(hosts.contains("myserver"));
+        REQUIRE(hosts.contains("localhost"));
+    }
+
+    SECTION("remove returns false for non-existent") {
+        HostsFile hosts;
+        hosts.load_from_string("127.0.0.1 localhost");
+
+        bool removed = hosts.remove("nonexistent");
+
+        REQUIRE_FALSE(removed);
+    }
+
+    SECTION("to_string preserves structure") {
+        std::string original =
+            "# Header comment\n"
+            "127.0.0.1 localhost\n"
+            "\n"
+            "192.168.1.100 myserver # my comment";
+
+        HostsFile hosts;
+        hosts.load_from_string(original);
+
+        std::string output = hosts.to_string();
+        REQUIRE(output == original);
+    }
+}
+
+TEST_CASE("HostsFile system_path", "[hosts]") {
+    std::string path = pnq::HostsFile::system_path();
+    REQUIRE(path.find("System32") != std::string::npos);
+    REQUIRE(path.find("hosts") != std::string::npos);
 }
