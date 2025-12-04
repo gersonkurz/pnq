@@ -113,17 +113,17 @@ namespace pnq
                     return text + 1;
                 }
 
-                // find closing %
+                // find closing % (but stop at newlines - variable names don't span lines)
                 const char *var_start{text};
-                while (text < end && *text != '%')
+                while (text < end && *text != '%' && *text != '\n' && *text != '\r')
                     ++text;
 
-                if (text >= end)
+                // If we didn't find closing % on the same line, output literally and
+                // return to var_start so those characters get processed by main loop
+                if (text >= end || *text != '%')
                 {
-                    // no closing %, output literally
                     output.append('%');
-                    output.append(std::string_view{var_start, static_cast<size_t>(text - var_start)});
-                    return text;
+                    return var_start;
                 }
 
                 // got closing %

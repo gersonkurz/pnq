@@ -638,6 +638,45 @@ TEST_CASE("string::Expander", "[string_expander]") {
             .expand("${X}%X%");
         REQUIRE(result == "yy");
     }
+
+    SECTION("repeated dollar variable expansion") {
+        Expander e;
+        e.expand_dollar(true);
+        std::string input = "A${COMPUTERNAME}B${COMPUTERNAME}C${COMPUTERNAME}D";
+        auto result = e.expand(input);
+
+        // Get expected computer name
+        char buffer[256];
+        DWORD size = sizeof(buffer);
+        REQUIRE(::GetComputerNameA(buffer, &size));
+        std::string cn(buffer);
+
+        std::string expected = "A" + cn + "B" + cn + "C" + cn + "D";
+        INFO("Input:    " << input);
+        INFO("Result:   " << result);
+        INFO("Expected: " << expected);
+        REQUIRE(result == expected);
+    }
+
+    SECTION("percent expansion stops at newline") {
+        // %s on one line should not consume content on following lines
+        Expander e;
+        e.expand_percent(true).expand_dollar(true);
+        std::string input = "password=%s\nhostname=${COMPUTERNAME}\n";
+        auto result = e.expand(input);
+
+        // Get expected computer name
+        char buffer[256];
+        DWORD size = sizeof(buffer);
+        REQUIRE(::GetComputerNameA(buffer, &size));
+        std::string cn(buffer);
+
+        std::string expected = "password=%s\nhostname=" + cn + "\n";
+        INFO("Input:    " << input);
+        INFO("Result:   " << result);
+        INFO("Expected: " << expected);
+        REQUIRE(result == expected);
+    }
 }
 
 // Test helper class for ref counting
