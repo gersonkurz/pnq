@@ -9,6 +9,8 @@
 #include <pnq/pnq.h>
 #include <pnq/win32/wstr_param.h>
 
+#include <aclapi.h>
+
 #include <unordered_map>
 
 namespace pnq
@@ -428,33 +430,224 @@ namespace pnq
             // Subkey Operations
             // =================================================================
 
-            /// Delete a subkey and all its contents.
+            /// Delete a subkey and all its contents using bottom-up approach.
             /// @param name Subkey name relative to this key
+            /// @param force If true, attempt to take ownership and grant permissions on access denied
             /// @return true if successful
-            bool delete_subkey(std::string_view name)
+            bool delete_subkey(std::string_view name, bool force = false)
             {
                 if (!open_for_writing())
                     return false;
 
-                LSTATUS result = ::RegDeleteTreeW(m_key, wstr_param{name});
+                std::string full_subkey_path = m_path + "\\" + std::string{name};
+                return delete_key_tree(full_subkey_path, force);
+            }
+
+            /// Delete a registry key recursively by full path using bottom-up approach.
+            /// @param path Full registry path
+            /// @param force If true, attempt to take ownership and grant permissions on access denied
+            /// @return true if successful
+            static bool delete_recursive(std::string_view path, bool force = false)
+            {
+                return delete_key_tree(std::string{path}, force);
+            }
+
+        private:
+            /// Recursively collect all subkey paths depth-first.
+            /// Returns paths from deepest to shallowest (ready for bottom-up deletion).
+            static bool collect_subkeys_depth_first(HKEY hive, const std::string& relative_path,
+                                                    std::vector<std::string>& out_paths)
+            {
+                HKEY hkey = nullptr;
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
+                if (result == ERROR_FILE_NOT_FOUND)
+                    return true;  // Key doesn't exist, nothing to collect
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') failed during enumeration", relative_path);
+                    return false;
+                }
+
+                // Enumerate subkeys
+                std::vector<std::string> subkey_names;
+                DWORD index = 0;
+                wchar_t name_buffer[256];
+                while (true)
+                {
+                    DWORD name_size = 256;
+                    result = ::RegEnumKeyExW(hkey, index++, name_buffer, &name_size,
+                                             nullptr, nullptr, nullptr, nullptr);
+                    if (result == ERROR_NO_MORE_ITEMS)
+                        break;
+                    if (result != ERROR_SUCCESS)
+                    {
+                        PNQ_LOG_WIN_ERROR(result, "RegEnumKeyEx failed");
+                        ::RegCloseKey(hkey);
+                        return false;
+                    }
+                    subkey_names.push_back(string::encode_as_utf8({name_buffer, name_size}));
+                }
+                ::RegCloseKey(hkey);
+
+                // Recurse into each subkey first (depth-first)
+                for (const auto& subkey_name : subkey_names)
+                {
+                    std::string subkey_path = relative_path.empty() ?
+                        subkey_name : (relative_path + "\\" + subkey_name);
+                    if (!collect_subkeys_depth_first(hive, subkey_path, out_paths))
+                        return false;
+                }
+
+                // Add this path after children (so it's deleted after them)
+                if (!relative_path.empty())
+                    out_paths.push_back(relative_path);
+
+                return true;
+            }
+
+            /// Take ownership of a key and grant full control to current user.
+            /// @return true if successful
+            static bool take_ownership_and_grant_access(HKEY hive, const std::string& relative_path)
+            {
+                // Open with WRITE_DAC | WRITE_OWNER
+                HKEY hkey = nullptr;
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0,
+                                                 WRITE_DAC | WRITE_OWNER, &hkey);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') with WRITE_DAC|WRITE_OWNER failed", relative_path);
+                    return false;
+                }
+
+                // Get current user's SID
+                HANDLE token = nullptr;
+                if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token))
+                {
+                    PNQ_LOG_LAST_ERROR("OpenProcessToken failed");
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+
+                DWORD token_info_size = 0;
+                ::GetTokenInformation(token, TokenUser, nullptr, 0, &token_info_size);
+                std::vector<BYTE> token_info(token_info_size);
+                if (!::GetTokenInformation(token, TokenUser, token_info.data(), token_info_size, &token_info_size))
+                {
+                    PNQ_LOG_LAST_ERROR("GetTokenInformation failed");
+                    ::CloseHandle(token);
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+                ::CloseHandle(token);
+
+                PTOKEN_USER user_info = reinterpret_cast<PTOKEN_USER>(token_info.data());
+                PSID user_sid = user_info->User.Sid;
+
+                // Take ownership
+                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, OWNER_SECURITY_INFORMATION,
+                                           user_sid, nullptr, nullptr, nullptr);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "SetSecurityInfo (ownership) failed for '{}'", relative_path);
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+                spdlog::info("Took ownership of '{}'", relative_path);
+
+                // Build DACL granting full control to current user
+                EXPLICIT_ACCESSW ea = {};
+                ea.grfAccessPermissions = KEY_ALL_ACCESS;
+                ea.grfAccessMode = SET_ACCESS;
+                ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+                ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+                ea.Trustee.TrusteeType = TRUSTEE_IS_USER;
+                ea.Trustee.ptstrName = reinterpret_cast<LPWSTR>(user_sid);
+
+                PACL new_dacl = nullptr;
+                result = ::SetEntriesInAclW(1, &ea, nullptr, &new_dacl);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "SetEntriesInAcl failed");
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+
+                // Apply the new DACL
+                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION,
+                                           nullptr, nullptr, new_dacl, nullptr);
+                ::LocalFree(new_dacl);
+                ::RegCloseKey(hkey);
+
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "SetSecurityInfo (DACL) failed for '{}'", relative_path);
+                    return false;
+                }
+                spdlog::info("Granted full control on '{}'", relative_path);
+
+                return true;
+            }
+
+            /// Delete a single key (no subkeys). Optionally forces access.
+            static bool delete_single_key(HKEY hive, const std::string& relative_path, bool force)
+            {
+                LSTATUS result = ::RegDeleteKeyW(hive, wstr_param{relative_path});
                 if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
                     return true;
 
-                PNQ_LOG_WIN_ERROR(result, "RegDeleteTree('{}') failed", name);
+                if (force && result == ERROR_ACCESS_DENIED)
+                {
+                    spdlog::info("Access denied for '{}', attempting to take ownership", relative_path);
+                    // Try taking ownership and granting access
+                    if (take_ownership_and_grant_access(hive, relative_path))
+                    {
+                        result = ::RegDeleteKeyW(hive, wstr_param{relative_path});
+                        if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
+                        {
+                            spdlog::info("Force-deleted '{}'", relative_path);
+                            return true;
+                        }
+                    }
+                    PNQ_LOG_WIN_ERROR(result, "RegDeleteKey('{}') failed even after taking ownership", relative_path);
+                }
+                else
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegDeleteKey('{}') failed", relative_path);
+                }
                 return false;
             }
 
-            /// Delete a registry key recursively by full path.
-            /// @param path Full registry path
-            /// @return true if successful
-            static bool delete_recursive(std::string_view path)
+            /// Delete a key tree using bottom-up approach.
+            static bool delete_key_tree(const std::string& full_path, bool force)
             {
-                auto [parent, child] = string::split_at_last_occurence(path, '\\');
-                if (child.empty())
+                std::string relative_path;
+                HKEY hive = parse_hive(full_path, relative_path);
+                if (!hive || relative_path.empty())
+                {
+                    spdlog::warn("Cannot delete hive root or invalid path: {}", full_path);
                     return false;
+                }
 
-                return key{parent}.delete_subkey(child);
+                // Collect all subkeys depth-first
+                std::vector<std::string> paths_to_delete;
+                if (!collect_subkeys_depth_first(hive, relative_path, paths_to_delete))
+                {
+                    // Even if enumeration fails, try to delete what we can
+                    spdlog::warn("Enumeration failed for '{}', attempting direct deletion", full_path);
+                }
+
+                // Delete from deepest to shallowest
+                bool all_succeeded = true;
+                for (const auto& path : paths_to_delete)
+                {
+                    if (!delete_single_key(hive, path, force))
+                        all_succeeded = false;
+                }
+
+                return all_succeeded;
             }
+
+        public:
 
             // =================================================================
             // Enumeration
