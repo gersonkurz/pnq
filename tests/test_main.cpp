@@ -962,6 +962,30 @@ TEST_CASE("file::get_extension", "[file]") {
     }
 }
 
+TEST_CASE("file::get_extension_normalized", "[file]") {
+    namespace f = pnq::file;
+
+    SECTION("lowercase extension unchanged") {
+        REQUIRE(f::get_extension_normalized("file.txt") == ".txt");
+    }
+
+    SECTION("uppercase extension lowercased") {
+        REQUIRE(f::get_extension_normalized("README.TXT") == ".txt");
+    }
+
+    SECTION("mixed case extension lowercased") {
+        REQUIRE(f::get_extension_normalized("Document.Docx") == ".docx");
+    }
+
+    SECTION("no extension") {
+        REQUIRE(f::get_extension_normalized("README").empty());
+    }
+
+    SECTION("path with mixed case extension") {
+        REQUIRE(f::get_extension_normalized("C:\\Users\\test\\File.PDF") == ".pdf");
+    }
+}
+
 TEST_CASE("file::match", "[file]") {
     namespace f = pnq::file;
 

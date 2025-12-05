@@ -22,6 +22,14 @@ namespace pnq
             return {};
         }
 
+        /// Get the file extension normalized to lowercase.
+        /// @param name filename or path
+        /// @return lowercase extension (e.g. ".txt") or empty if none
+        inline std::string get_extension_normalized(std::string_view name)
+        {
+            return string::lowercase(get_extension(name));
+        }
+
         /// Check if a file exists.
         /// @param path file path to check
         /// @return true if file exists
