@@ -140,6 +140,18 @@ namespace pnq
             return std::string::npos;
         }
 
+        /// Check if haystack contains needle.
+        inline bool contains(std::string_view haystack, std::string_view needle)
+        {
+            return haystack.find(needle) != std::string_view::npos;
+        }
+
+        /// Check if haystack contains needle (case-insensitive).
+        inline bool contains_nocase(std::string_view haystack, std::string_view needle)
+        {
+            return find_nocase(haystack, needle) != std::string::npos;
+        }
+
         /// Join strings with a separator.
         inline std::string join(const std::vector<std::string> &items, std::string_view joiner)
         {

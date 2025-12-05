@@ -154,6 +154,62 @@ TEST_CASE("string::starts_with_nocase", "[string]") {
     }
 }
 
+TEST_CASE("string::contains", "[string]") {
+    using pnq::string::contains;
+
+    SECTION("substring found") {
+        REQUIRE(contains("hello world", "world"));
+        REQUIRE(contains("hello world", "hello"));
+        REQUIRE(contains("hello world", "lo wo"));
+    }
+
+    SECTION("substring not found") {
+        REQUIRE_FALSE(contains("hello world", "foo"));
+        REQUIRE_FALSE(contains("hello", "hello world"));
+    }
+
+    SECTION("empty needle") {
+        REQUIRE(contains("hello", ""));
+        REQUIRE(contains("", ""));
+    }
+
+    SECTION("empty haystack") {
+        REQUIRE_FALSE(contains("", "a"));
+    }
+
+    SECTION("case sensitive") {
+        REQUIRE_FALSE(contains("Hello World", "hello"));
+        REQUIRE(contains("Hello World", "Hello"));
+    }
+}
+
+TEST_CASE("string::contains_nocase", "[string]") {
+    using pnq::string::contains_nocase;
+
+    SECTION("substring found, same case") {
+        REQUIRE(contains_nocase("hello world", "world"));
+    }
+
+    SECTION("substring found, different case") {
+        REQUIRE(contains_nocase("Hello World", "hello"));
+        REQUIRE(contains_nocase("HELLO WORLD", "world"));
+        REQUIRE(contains_nocase("hello world", "LO WO"));
+    }
+
+    SECTION("substring not found") {
+        REQUIRE_FALSE(contains_nocase("hello world", "foo"));
+        REQUIRE_FALSE(contains_nocase("hello", "hello world"));
+    }
+
+    SECTION("empty needle") {
+        REQUIRE(contains_nocase("hello", ""));
+    }
+
+    SECTION("empty haystack") {
+        REQUIRE_FALSE(contains_nocase("", "a"));
+    }
+}
+
 TEST_CASE("string::join", "[string]") {
     using pnq::string::join;
 
