@@ -10,6 +10,7 @@
 #include <pnq/win32/wstr_param.h>
 
 #include <aclapi.h>
+#include <sddl.h>
 
 #include <unordered_map>
 
@@ -23,7 +24,7 @@ namespace pnq
 
         /// Map of registry hive names to HKEY handles.
         /// Includes both long names (HKEY_LOCAL_MACHINE) and short aliases (HKLM).
-        inline const std::unordered_map<std::string, HKEY>& known_hives()
+        inline const std::unordered_map<std::string, HKEY> &known_hives()
         {
             static const std::unordered_map<std::string, HKEY> hives{
                 {"HKEY_CLASSES_ROOT", HKEY_CLASSES_ROOT},
@@ -50,11 +51,11 @@ namespace pnq
         /// @param full_path Full registry path like "HKEY_LOCAL_MACHINE\\SOFTWARE\\MyApp"
         /// @param relative_path [out] Path relative to hive (e.g., "SOFTWARE\\MyApp")
         /// @return HKEY for the hive, or nullptr if not found
-        inline HKEY parse_hive(std::string_view full_path, std::string& relative_path)
+        inline HKEY parse_hive(std::string_view full_path, std::string &relative_path)
         {
             relative_path.clear();
 
-            for (const auto& [name, hkey] : known_hives())
+            for (const auto &[name, hkey] : known_hives())
             {
                 // Check for "HIVE\path"
                 if (full_path.size() > name.size() && full_path[name.size()] == '\\')
@@ -126,17 +127,12 @@ namespace pnq
                 {
                     m_key = hive;
                     m_is_root_key = true;
-                    m_has_write_permissions = true;  // root keys have implicit access
+                    m_has_write_permissions = true; // root keys have implicit access
                     return true;
                 }
 
                 HKEY hkey = nullptr;
-                LSTATUS result = ::RegOpenKeyExW(
-                    hive,
-                    wstr_param{relative_path},
-                    0,
-                    KEY_READ,
-                    &hkey);
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
 
                 if (result != ERROR_SUCCESS)
                 {
@@ -149,6 +145,163 @@ namespace pnq
                 m_has_write_permissions = false;
                 return true;
             }
+
+            /// Set permissive DACL on a single registry key (Everyone: Full Control).
+            /// Does NOT apply to existing subkeys. Use set_permissive_sddl_recursive for that.
+            static bool set_permissive_sddl(const std::string &key_path)
+            {
+                std::string relative_path;
+                HKEY hive = parse_hive(key_path, relative_path);
+                if (!hive)
+                    return false;
+
+                return set_permissive_sddl_on_key(hive, relative_path);
+            }
+
+            /// Set permissive DACL on a registry key and all existing subkeys (Everyone: Full Control).
+            static bool set_permissive_sddl_recursive(const std::string &key_path)
+            {
+                std::string relative_path;
+                HKEY hive = parse_hive(key_path, relative_path);
+                if (!hive)
+                    return false;
+
+                // Collect all subkey paths (includes the root path)
+                std::vector<std::string> all_paths;
+                all_paths.push_back(relative_path);
+                if (!collect_subkeys_for_sddl(hive, relative_path, all_paths))
+                    return false;
+
+                // Apply DACL to each key
+                bool all_succeeded = true;
+                for (const auto &path : all_paths)
+                {
+                    if (!set_permissive_sddl_on_key(hive, path))
+                        all_succeeded = false;
+                }
+                return all_succeeded;
+            }
+
+            /// Take ownership of a single registry key and grant full control to current user.
+            static bool take_ownership(const std::string &key_path)
+            {
+                std::string relative_path;
+                HKEY hive = parse_hive(key_path, relative_path);
+                if (!hive)
+                    return false;
+
+                return take_ownership_and_grant_access(hive, relative_path);
+            }
+
+            /// Take ownership of a registry key and all subkeys, granting full control to current user.
+            static bool take_ownership_recursive(const std::string &key_path)
+            {
+                std::string relative_path;
+                HKEY hive = parse_hive(key_path, relative_path);
+                if (!hive)
+                    return false;
+
+                // Collect all subkey paths first (requires read access)
+                std::vector<std::string> all_paths;
+                all_paths.push_back(relative_path);
+                if (!collect_subkeys_for_sddl(hive, relative_path, all_paths))
+                    return false;
+
+                // Take ownership of each key
+                bool all_succeeded = true;
+                for (const auto &path : all_paths)
+                {
+                    if (!take_ownership_and_grant_access(hive, path))
+                        all_succeeded = false;
+                }
+                return all_succeeded;
+            }
+
+        private:
+            /// Apply permissive DACL to a single key by hive and relative path.
+            static bool set_permissive_sddl_on_key(HKEY hive, const std::string &relative_path)
+            {
+                // Open with WRITE_DAC to modify the DACL
+                HKEY hkey = nullptr;
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, WRITE_DAC, &hkey);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') with WRITE_DAC failed", relative_path);
+                    return false;
+                }
+
+                // SDDL: D:(A;OICI;GA;;;WD) = Allow Everyone Generic All, Object Inherit + Container Inherit
+                PSECURITY_DESCRIPTOR pSD = nullptr;
+                if (!::ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;OICI;GA;;;WD)", SDDL_REVISION_1, &pSD, nullptr))
+                {
+                    PNQ_LOG_LAST_ERROR("ConvertStringSecurityDescriptorToSecurityDescriptorW() failed");
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+
+                BOOL daclPresent = FALSE, daclDefaulted = FALSE;
+                PACL pDacl = nullptr;
+                if (!::GetSecurityDescriptorDacl(pSD, &daclPresent, &pDacl, &daclDefaulted))
+                {
+                    PNQ_LOG_LAST_ERROR("GetSecurityDescriptorDacl() failed");
+                    ::LocalFree(pSD);
+                    ::RegCloseKey(hkey);
+                    return false;
+                }
+
+                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION, nullptr, nullptr, pDacl, nullptr);
+                ::LocalFree(pSD);
+                ::RegCloseKey(hkey);
+
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "SetSecurityInfo() failed for '{}'", relative_path);
+                    return false;
+                }
+                return true;
+            }
+
+            /// Recursively collect all subkey paths (breadth-first, for SDDL application).
+            static bool collect_subkeys_for_sddl(HKEY hive, const std::string &relative_path, std::vector<std::string> &out_paths)
+            {
+                HKEY hkey = nullptr;
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') failed during SDDL enumeration", relative_path);
+                    return false;
+                }
+
+                std::vector<std::string> subkey_names;
+                DWORD index = 0;
+                wchar_t name_buffer[256];
+                while (true)
+                {
+                    DWORD name_size = 256;
+                    result = ::RegEnumKeyExW(hkey, index++, name_buffer, &name_size, nullptr, nullptr, nullptr, nullptr);
+                    if (result == ERROR_NO_MORE_ITEMS)
+                        break;
+                    if (result != ERROR_SUCCESS)
+                    {
+                        PNQ_LOG_WIN_ERROR(result, "RegEnumKeyEx failed");
+                        ::RegCloseKey(hkey);
+                        return false;
+                    }
+                    subkey_names.push_back(string::encode_as_utf8({name_buffer, name_size}));
+                }
+                ::RegCloseKey(hkey);
+
+                for (const auto &subkey_name : subkey_names)
+                {
+                    std::string subkey_path = relative_path.empty() ? subkey_name : (relative_path + "\\" + subkey_name);
+                    out_paths.push_back(subkey_path);
+                    if (!collect_subkeys_for_sddl(hive, subkey_path, out_paths))
+                        return false;
+                }
+                return true;
+            }
+
+        public:
 
             /// Open the key for writing. Creates the key if it doesn't exist.
             /// @return true if successful
@@ -172,27 +325,13 @@ namespace pnq
                 }
 
                 HKEY hkey = nullptr;
-                LSTATUS result = ::RegOpenKeyExW(
-                    hive,
-                    wstr_param{relative_path},
-                    0,
-                    KEY_READ | KEY_WRITE | DELETE,
-                    &hkey);
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ | KEY_WRITE | DELETE, &hkey);
 
                 if (result == ERROR_FILE_NOT_FOUND)
                 {
                     // Key doesn't exist - create it
                     DWORD disposition = 0;
-                    result = ::RegCreateKeyExW(
-                        hive,
-                        wstr_param{relative_path},
-                        0,
-                        nullptr,
-                        0,
-                        KEY_READ | KEY_WRITE | DELETE,
-                        nullptr,
-                        &hkey,
-                        &disposition);
+                    result = ::RegCreateKeyExW(hive, wstr_param{relative_path}, 0, nullptr, 0, KEY_READ | KEY_WRITE | DELETE, nullptr, &hkey, &disposition);
 
                     if (result != ERROR_SUCCESS)
                     {
@@ -245,9 +384,9 @@ namespace pnq
             /// @param name Value name (empty for default value)
             /// @param val [out] Value to populate
             /// @return true if successful
-            bool get(std::string_view name, value& val) const
+            bool get(std::string_view name, value &val) const
             {
-                if (!const_cast<key*>(this)->open_for_reading())
+                if (!const_cast<key *>(this)->open_for_reading())
                     return false;
 
                 DWORD type = 0;
@@ -258,13 +397,7 @@ namespace pnq
                 while (data_size < 32768)
                 {
                     DWORD actual_size = data_size;
-                    LSTATUS result = ::RegQueryValueExW(
-                        m_key,
-                        wstr_param{name},
-                        nullptr,
-                        &type,
-                        data.data(),
-                        &actual_size);
+                    LSTATUS result = ::RegQueryValueExW(m_key, wstr_param{name}, nullptr, &type, data.data(), &actual_size);
 
                     if (result == ERROR_SUCCESS)
                     {
@@ -289,7 +422,7 @@ namespace pnq
             /// @param name Value name (empty for default value)
             /// @param val Value to write
             /// @return true if successful
-            bool set(std::string_view name, const value& val)
+            bool set(std::string_view name, const value &val)
             {
                 if (!open_for_writing())
                     return false;
@@ -307,14 +440,8 @@ namespace pnq
                 else
                 {
                     // Set the value
-                    const bytes& data = val.get_binary();
-                    LSTATUS result = ::RegSetValueExW(
-                        m_key,
-                        wstr_param{name},
-                        0,
-                        val.type(),
-                        data.data(),
-                        truncate_cast<DWORD>(data.size()));
+                    const bytes &data = val.get_binary();
+                    LSTATUS result = ::RegSetValueExW(m_key, wstr_param{name}, 0, val.type(), data.data(), truncate_cast<DWORD>(data.size()));
 
                     if (result == ERROR_SUCCESS)
                         return true;
@@ -405,7 +532,7 @@ namespace pnq
             }
 
             /// Set a multi-string value (REG_MULTI_SZ).
-            bool set_multi_string(std::string_view name, const std::vector<std::string>& val)
+            bool set_multi_string(std::string_view name, const std::vector<std::string> &val)
             {
                 value v{name};
                 v.set_multi_string(val);
@@ -455,13 +582,12 @@ namespace pnq
         private:
             /// Recursively collect all subkey paths depth-first.
             /// Returns paths from deepest to shallowest (ready for bottom-up deletion).
-            static bool collect_subkeys_depth_first(HKEY hive, const std::string& relative_path,
-                                                    std::vector<std::string>& out_paths)
+            static bool collect_subkeys_depth_first(HKEY hive, const std::string &relative_path, std::vector<std::string> &out_paths)
             {
                 HKEY hkey = nullptr;
                 LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
                 if (result == ERROR_FILE_NOT_FOUND)
-                    return true;  // Key doesn't exist, nothing to collect
+                    return true; // Key doesn't exist, nothing to collect
                 if (result != ERROR_SUCCESS)
                 {
                     PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') failed during enumeration", relative_path);
@@ -475,8 +601,7 @@ namespace pnq
                 while (true)
                 {
                     DWORD name_size = 256;
-                    result = ::RegEnumKeyExW(hkey, index++, name_buffer, &name_size,
-                                             nullptr, nullptr, nullptr, nullptr);
+                    result = ::RegEnumKeyExW(hkey, index++, name_buffer, &name_size, nullptr, nullptr, nullptr, nullptr);
                     if (result == ERROR_NO_MORE_ITEMS)
                         break;
                     if (result != ERROR_SUCCESS)
@@ -490,10 +615,9 @@ namespace pnq
                 ::RegCloseKey(hkey);
 
                 // Recurse into each subkey first (depth-first)
-                for (const auto& subkey_name : subkey_names)
+                for (const auto &subkey_name : subkey_names)
                 {
-                    std::string subkey_path = relative_path.empty() ?
-                        subkey_name : (relative_path + "\\" + subkey_name);
+                    std::string subkey_path = relative_path.empty() ? subkey_name : (relative_path + "\\" + subkey_name);
                     if (!collect_subkeys_depth_first(hive, subkey_path, out_paths))
                         return false;
                 }
@@ -505,56 +629,119 @@ namespace pnq
                 return true;
             }
 
-            /// Take ownership of a key and grant full control to current user.
-            /// @return true if successful
-            static bool take_ownership_and_grant_access(HKEY hive, const std::string& relative_path)
+            /// Enable a privilege on the current process token.
+            static bool enable_privilege(LPCWSTR privilege_name)
             {
-                // Open with WRITE_DAC | WRITE_OWNER
-                HKEY hkey = nullptr;
-                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0,
-                                                 WRITE_DAC | WRITE_OWNER, &hkey);
-                if (result != ERROR_SUCCESS)
+                HANDLE token = nullptr;
+                if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+                    return false;
+
+                TOKEN_PRIVILEGES tp = {};
+                if (!::LookupPrivilegeValueW(nullptr, privilege_name, &tp.Privileges[0].Luid))
                 {
-                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') with WRITE_DAC|WRITE_OWNER failed", relative_path);
+                    ::CloseHandle(token);
                     return false;
                 }
 
-                // Get current user's SID
+                tp.PrivilegeCount = 1;
+                tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+                BOOL ok = ::AdjustTokenPrivileges(token, FALSE, &tp, 0, nullptr, nullptr);
+                DWORD err = ::GetLastError();
+                ::CloseHandle(token);
+
+                return ok && err == ERROR_SUCCESS;
+            }
+
+            /// Get current user's SID. Caller must free with LocalFree.
+            static PSID get_current_user_sid()
+            {
                 HANDLE token = nullptr;
                 if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token))
+                    return nullptr;
+
+                DWORD size = 0;
+                ::GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+                if (size == 0)
                 {
-                    PNQ_LOG_LAST_ERROR("OpenProcessToken failed");
-                    ::RegCloseKey(hkey);
-                    return false;
+                    ::CloseHandle(token);
+                    return nullptr;
                 }
 
-                DWORD token_info_size = 0;
-                ::GetTokenInformation(token, TokenUser, nullptr, 0, &token_info_size);
-                std::vector<BYTE> token_info(token_info_size);
-                if (!::GetTokenInformation(token, TokenUser, token_info.data(), token_info_size, &token_info_size))
+                std::vector<BYTE> buffer(size);
+                if (!::GetTokenInformation(token, TokenUser, buffer.data(), size, &size))
                 {
-                    PNQ_LOG_LAST_ERROR("GetTokenInformation failed");
                     ::CloseHandle(token);
-                    ::RegCloseKey(hkey);
-                    return false;
+                    return nullptr;
                 }
                 ::CloseHandle(token);
 
-                PTOKEN_USER user_info = reinterpret_cast<PTOKEN_USER>(token_info.data());
-                PSID user_sid = user_info->User.Sid;
+                PTOKEN_USER user_info = reinterpret_cast<PTOKEN_USER>(buffer.data());
+                DWORD sid_len = ::GetLengthSid(user_info->User.Sid);
+                PSID sid_copy = static_cast<PSID>(::LocalAlloc(LMEM_FIXED, sid_len));
+                if (sid_copy && !::CopySid(sid_len, sid_copy, user_info->User.Sid))
+                {
+                    ::LocalFree(sid_copy);
+                    return nullptr;
+                }
+                return sid_copy;
+            }
 
-                // Take ownership
-                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, OWNER_SECURITY_INFORMATION,
-                                           user_sid, nullptr, nullptr, nullptr);
+            /// Take ownership of a key and grant full control to current user.
+            /// Requires SeTakeOwnershipPrivilege (typically admin).
+            /// @return true if successful
+            static bool take_ownership_and_grant_access(HKEY hive, const std::string &relative_path)
+            {
+                // Enable privileges needed for taking ownership
+                if (!enable_privilege(SE_TAKE_OWNERSHIP_NAME))
+                    spdlog::warn("Failed to enable SeTakeOwnershipPrivilege - may not be running elevated");
+                enable_privilege(SE_RESTORE_NAME);
+                enable_privilege(SE_BACKUP_NAME);
+
+                // Get current user's SID
+                PSID user_sid = get_current_user_sid();
+                if (!user_sid)
+                {
+                    PNQ_LOG_LAST_ERROR("Failed to get current user SID");
+                    return false;
+                }
+
+                // Step 1: Open with WRITE_OWNER only (works with SeTakeOwnershipPrivilege)
+                // Try REG_OPTION_BACKUP_RESTORE first (works with SE_RESTORE_NAME), fall back to normal open
+                HKEY hkey = nullptr;
+                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, REG_OPTION_BACKUP_RESTORE, WRITE_OWNER, &hkey);
+                if (result != ERROR_SUCCESS)
+                {
+                    // Fall back to normal open
+                    result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, WRITE_OWNER, &hkey);
+                }
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') with WRITE_OWNER failed", relative_path);
+                    ::LocalFree(user_sid);
+                    return false;
+                }
+
+                // Step 2: Take ownership
+                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, OWNER_SECURITY_INFORMATION, user_sid, nullptr, nullptr, nullptr);
+                ::RegCloseKey(hkey);
                 if (result != ERROR_SUCCESS)
                 {
                     PNQ_LOG_WIN_ERROR(result, "SetSecurityInfo (ownership) failed for '{}'", relative_path);
-                    ::RegCloseKey(hkey);
+                    ::LocalFree(user_sid);
                     return false;
                 }
                 spdlog::info("Took ownership of '{}'", relative_path);
 
-                // Build DACL granting full control to current user
+                // Step 3: Re-open with WRITE_DAC (now that we own it)
+                result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, WRITE_DAC, &hkey);
+                if (result != ERROR_SUCCESS)
+                {
+                    PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') with WRITE_DAC failed after taking ownership", relative_path);
+                    ::LocalFree(user_sid);
+                    return false;
+                }
+
+                // Step 4: Build DACL granting full control to current user
                 EXPLICIT_ACCESSW ea = {};
                 ea.grfAccessPermissions = KEY_ALL_ACCESS;
                 ea.grfAccessMode = SET_ACCESS;
@@ -569,13 +756,14 @@ namespace pnq
                 {
                     PNQ_LOG_WIN_ERROR(result, "SetEntriesInAcl failed");
                     ::RegCloseKey(hkey);
+                    ::LocalFree(user_sid);
                     return false;
                 }
 
-                // Apply the new DACL
-                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION,
-                                           nullptr, nullptr, new_dacl, nullptr);
+                // Step 5: Apply the new DACL
+                result = ::SetSecurityInfo(hkey, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION, nullptr, nullptr, new_dacl, nullptr);
                 ::LocalFree(new_dacl);
+                ::LocalFree(user_sid);
                 ::RegCloseKey(hkey);
 
                 if (result != ERROR_SUCCESS)
@@ -589,7 +777,7 @@ namespace pnq
             }
 
             /// Delete a single key (no subkeys). Optionally forces access.
-            static bool delete_single_key(HKEY hive, const std::string& relative_path, bool force)
+            static bool delete_single_key(HKEY hive, const std::string &relative_path, bool force)
             {
                 LSTATUS result = ::RegDeleteKeyW(hive, wstr_param{relative_path});
                 if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
@@ -618,7 +806,7 @@ namespace pnq
             }
 
             /// Delete a key tree using bottom-up approach.
-            static bool delete_key_tree(const std::string& full_path, bool force)
+            static bool delete_key_tree(const std::string &full_path, bool force)
             {
                 std::string relative_path;
                 HKEY hive = parse_hive(full_path, relative_path);
@@ -638,7 +826,7 @@ namespace pnq
 
                 // Delete from deepest to shallowest
                 bool all_succeeded = true;
-                for (const auto& path : paths_to_delete)
+                for (const auto &path : paths_to_delete)
                 {
                     if (!delete_single_key(hive, path, force))
                         all_succeeded = false;
@@ -648,7 +836,6 @@ namespace pnq
             }
 
         public:
-
             // =================================================================
             // Enumeration
             // =================================================================
@@ -657,7 +844,7 @@ namespace pnq
             /// @return Enumerator for range-based for loops
             value_enumerator enum_values() const
             {
-                const_cast<key*>(this)->open_for_reading();
+                const_cast<key *>(this)->open_for_reading();
                 return value_enumerator{m_key};
             }
 
@@ -665,7 +852,7 @@ namespace pnq
             /// @return Enumerator for range-based for loops
             key_enumerator enum_keys() const
             {
-                const_cast<key*>(this)->open_for_reading();
+                const_cast<key *>(this)->open_for_reading();
                 return key_enumerator{m_key, m_path};
             }
 
@@ -674,7 +861,7 @@ namespace pnq
             // =================================================================
 
             /// Get the full registry path.
-            const std::string& path() const
+            const std::string &path() const
             {
                 return m_path;
             }

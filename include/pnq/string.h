@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cctype>
 #include <cstring>
+#include <type_traits>
 
 #ifdef PNQ_PLATFORM_WINDOWS
 #include <Windows.h>
@@ -166,6 +167,87 @@ namespace pnq
                 combined += item;
             }
             return combined;
+        }
+
+        /// Format integer with thousand separators.
+        /// @param value the integer to format
+        /// @param separator the separator character (default: ',')
+        /// @return formatted string (e.g., "1,234,567")
+        template <typename T>
+        inline std::string format_with_thousands(T value, char separator = ',')
+        {
+            static_assert(std::is_integral_v<T>, "format_with_thousands requires an integral type");
+
+            bool negative = false;
+            if constexpr (std::is_signed_v<T>)
+            {
+                if (value < 0)
+                {
+                    negative = true;
+                    value = -value;
+                }
+            }
+
+            std::string digits;
+            if (value == 0)
+            {
+                digits = "0";
+            }
+            else
+            {
+                while (value > 0)
+                {
+                    digits.push_back('0' + static_cast<char>(value % 10));
+                    value /= 10;
+                }
+            }
+
+            std::string result;
+            result.reserve(digits.size() + (digits.size() - 1) / 3 + (negative ? 1 : 0));
+
+            if (negative)
+                result.push_back('-');
+
+            for (size_t i = digits.size(); i > 0; --i)
+            {
+                result.push_back(digits[i - 1]);
+                // Insert separator after every 3rd digit from the right, but not at the end
+                if ((i - 1) > 0 && (i - 1) % 3 == 0)
+                    result.push_back(separator);
+            }
+
+            return result;
+        }
+
+        /// Format byte size as human-readable string (KB, MB, GB, etc.).
+        /// Uses binary units (1 KB = 1024 bytes).
+        /// @param bytes the size in bytes
+        /// @param precision decimal places for non-integer results (default: 1)
+        /// @return formatted string (e.g., "1.5 MB", "512 bytes")
+        inline std::string format_file_size(uint64_t bytes, int precision = 1)
+        {
+            constexpr uint64_t KB = 1024;
+            constexpr uint64_t MB = KB * 1024;
+            constexpr uint64_t GB = MB * 1024;
+            constexpr uint64_t TB = GB * 1024;
+            constexpr uint64_t PB = TB * 1024;
+
+            auto format_unit = [precision](double value, const char* unit) -> std::string {
+                char buf[64];
+                if (value == static_cast<uint64_t>(value))
+                    std::snprintf(buf, sizeof(buf), "%llu %s", static_cast<unsigned long long>(value), unit);
+                else
+                    std::snprintf(buf, sizeof(buf), "%.*f %s", precision, value, unit);
+                return buf;
+            };
+
+            if (bytes >= PB) return format_unit(static_cast<double>(bytes) / PB, "PB");
+            if (bytes >= TB) return format_unit(static_cast<double>(bytes) / TB, "TB");
+            if (bytes >= GB) return format_unit(static_cast<double>(bytes) / GB, "GB");
+            if (bytes >= MB) return format_unit(static_cast<double>(bytes) / MB, "MB");
+            if (bytes >= KB) return format_unit(static_cast<double>(bytes) / KB, "KB");
+
+            return std::to_string(bytes) + (bytes == 1 ? " byte" : " bytes");
         }
 
         /// Convert string to uppercase (ASCII only).

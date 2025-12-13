@@ -229,6 +229,79 @@ TEST_CASE("string::join", "[string]") {
     }
 }
 
+TEST_CASE("string::format_with_thousands", "[string]") {
+    using pnq::string::format_with_thousands;
+
+    SECTION("basic formatting") {
+        REQUIRE(format_with_thousands(0) == "0");
+        REQUIRE(format_with_thousands(1) == "1");
+        REQUIRE(format_with_thousands(12) == "12");
+        REQUIRE(format_with_thousands(123) == "123");
+        REQUIRE(format_with_thousands(1234) == "1,234");
+        REQUIRE(format_with_thousands(12345) == "12,345");
+        REQUIRE(format_with_thousands(123456) == "123,456");
+        REQUIRE(format_with_thousands(1234567) == "1,234,567");
+        REQUIRE(format_with_thousands(1234567890) == "1,234,567,890");
+    }
+
+    SECTION("negative numbers") {
+        REQUIRE(format_with_thousands(-1) == "-1");
+        REQUIRE(format_with_thousands(-1234) == "-1,234");
+        REQUIRE(format_with_thousands(-1234567) == "-1,234,567");
+    }
+
+    SECTION("custom separator") {
+        REQUIRE(format_with_thousands(1234567, '.') == "1.234.567");
+        REQUIRE(format_with_thousands(1234567, ' ') == "1 234 567");
+    }
+
+    SECTION("unsigned types") {
+        REQUIRE(format_with_thousands(1234u) == "1,234");
+        REQUIRE(format_with_thousands(uint64_t{12345678901234}) == "12,345,678,901,234");
+    }
+}
+
+TEST_CASE("string::format_file_size", "[string]") {
+    using pnq::string::format_file_size;
+
+    SECTION("bytes") {
+        REQUIRE(format_file_size(0) == "0 bytes");
+        REQUIRE(format_file_size(1) == "1 byte");
+        REQUIRE(format_file_size(512) == "512 bytes");
+        REQUIRE(format_file_size(1023) == "1023 bytes");
+    }
+
+    SECTION("kilobytes") {
+        REQUIRE(format_file_size(1024) == "1 KB");
+        REQUIRE(format_file_size(1536) == "1.5 KB");
+        REQUIRE(format_file_size(10240) == "10 KB");
+    }
+
+    SECTION("megabytes") {
+        REQUIRE(format_file_size(1048576) == "1 MB");
+        REQUIRE(format_file_size(1572864) == "1.5 MB");
+        REQUIRE(format_file_size(104857600) == "100 MB");
+    }
+
+    SECTION("gigabytes") {
+        REQUIRE(format_file_size(1073741824) == "1 GB");
+        REQUIRE(format_file_size(1610612736) == "1.5 GB");
+    }
+
+    SECTION("terabytes") {
+        REQUIRE(format_file_size(1099511627776ULL) == "1 TB");
+    }
+
+    SECTION("petabytes") {
+        REQUIRE(format_file_size(1125899906842624ULL) == "1 PB");
+    }
+
+    SECTION("custom precision") {
+        REQUIRE(format_file_size(1536, 2) == "1.50 KB");
+        REQUIRE(format_file_size(1536, 0) == "2 KB");
+    }
+}
+
 TEST_CASE("string::uppercase/lowercase", "[string]") {
     SECTION("uppercase") {
         REQUIRE(pnq::string::uppercase("hello") == "HELLO");
@@ -1769,6 +1842,47 @@ TEST_CASE("registry::key live access", "[registry]") {
         parent.close();
         REQUIRE(key::delete_recursive(test_path));
     }
+}
+
+TEST_CASE("registry::take_ownership_and_delete", "[registry][!mayfail]") {
+    using pnq::regis3::key;
+
+    // Check if running elevated
+    BOOL is_elevated = FALSE;
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(elevation);
+        if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size)) {
+            is_elevated = elevation.TokenIsElevated;
+        }
+        CloseHandle(token);
+    }
+    if (!is_elevated) {
+        WARN("Not running elevated, skipping take_ownership test");
+        return;
+    }
+
+    // This key requires elevation and take-ownership to delete
+    const std::string target = "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Pergamon\\AKT\\Dienst\\Options";
+
+    // Check if key exists
+    key k(target);
+    if (!k.open_for_reading()) {
+        WARN("Key does not exist, skipping: " << target);
+        return;
+    }
+    k.close();
+
+    INFO("Taking ownership of: " << target);
+    REQUIRE(key::take_ownership_recursive(target));
+
+    INFO("Deleting: " << target);
+    REQUIRE(key::delete_recursive(target));
+
+    // Verify deletion
+    key verify(target);
+    REQUIRE_FALSE(verify.open_for_reading());
 }
 
 TEST_CASE("registry::regfile_parser", "[registry]") {
