@@ -240,6 +240,13 @@ namespace pnq
             return write(temp.as_string());
         }
 
+        /// Format and write to console.
+        template <typename... Args>
+        inline bool format(std::string_view text, Args &&...args)
+        {
+            return write(std::vformat(text, std::make_format_args(args...)));
+        }
+
         /// Format and write a line to console.
         template <typename... Args>
         inline bool format_line(std::string_view text, Args &&...args)
