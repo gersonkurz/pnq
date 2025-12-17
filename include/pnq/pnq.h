@@ -55,9 +55,14 @@
     pnq::logging::report_windows_error(PNQ_FUNCTION_CONTEXT, error_code, __VA_ARGS__)
 
 /// Log GetLastError() with automatic context. Most common case.
+/// Preserves the error code so callers can still check GetLastError() after logging.
 /// Usage: PNQ_LOG_LAST_ERROR("CreateFile('{}') failed", filename);
 #define PNQ_LOG_LAST_ERROR(...) \
-    pnq::logging::report_windows_error(PNQ_FUNCTION_CONTEXT, GetLastError(), __VA_ARGS__)
+    do { \
+        DWORD pnq__last_error = GetLastError(); \
+        pnq::logging::report_windows_error(PNQ_FUNCTION_CONTEXT, pnq__last_error, __VA_ARGS__); \
+        SetLastError(pnq__last_error); \
+    } while (0)
 
 /// This macro can be used on classes that should not enable a copy / move constructor / assignment operator
 #define PNQ_DECLARE_NON_COPYABLE(__CLASSNAME__) \

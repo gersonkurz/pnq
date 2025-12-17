@@ -222,6 +222,21 @@ namespace pnq
                 return true;
             }
 
+            /// Query current service status with process info.
+            /// @param status receives the extended service status
+            /// @return true if query succeeded
+            bool query_status(SERVICE_STATUS_PROCESS& status) const
+            {
+                DWORD needed = 0;
+                if (!QueryServiceStatusEx(m_handle, SC_STATUS_PROCESS_INFO,
+                        reinterpret_cast<LPBYTE>(&status), sizeof(status), &needed))
+                {
+                    PNQ_LOG_LAST_ERROR("QueryServiceStatusEx('{}') failed", m_name);
+                    return false;
+                }
+                return true;
+            }
+
             /// Check if service is running.
             /// @return true if service is in SERVICE_RUNNING state
             bool is_running() const
@@ -253,25 +268,21 @@ namespace pnq
             }
 
             /// Wait until service reaches stopped state.
+            /// Uses dwWaitHint from service status to determine poll interval.
             /// @param timeout maximum time to wait
-            /// @param poll_interval time between status checks
             /// @return true if service is stopped, false on timeout
-            bool wait_until_stopped(
-                std::chrono::milliseconds timeout = std::chrono::seconds{30},
-                std::chrono::milliseconds poll_interval = std::chrono::milliseconds{100}) const
+            bool wait_until_stopped(std::chrono::milliseconds timeout = std::chrono::seconds{30}) const
             {
-                return wait_for_state(SERVICE_STOPPED, timeout, poll_interval);
+                return wait_for_state(SERVICE_STOPPED, timeout);
             }
 
             /// Wait until service reaches running state.
+            /// Uses dwWaitHint from service status to determine poll interval.
             /// @param timeout maximum time to wait
-            /// @param poll_interval time between status checks
             /// @return true if service is running, false on timeout
-            bool wait_until_running(
-                std::chrono::milliseconds timeout = std::chrono::seconds{30},
-                std::chrono::milliseconds poll_interval = std::chrono::milliseconds{100}) const
+            bool wait_until_running(std::chrono::milliseconds timeout = std::chrono::seconds{30}) const
             {
-                return wait_for_state(SERVICE_RUNNING, timeout, poll_interval);
+                return wait_for_state(SERVICE_RUNNING, timeout);
             }
 
             /// Query full service configuration.
@@ -412,19 +423,34 @@ namespace pnq
             }
 
         private:
-            bool wait_for_state(
-                DWORD target_state,
-                std::chrono::milliseconds timeout,
-                std::chrono::milliseconds poll_interval) const
+            bool wait_for_state(DWORD target_state, std::chrono::milliseconds timeout) const
             {
                 auto deadline = std::chrono::steady_clock::now() + timeout;
+                DWORD last_checkpoint = 0;
+
                 while (std::chrono::steady_clock::now() < deadline)
                 {
-                    if (current_state() == target_state)
+                    SERVICE_STATUS_PROCESS ssp{};
+                    if (!query_status(ssp))
+                        return false;
+
+                    if (ssp.dwCurrentState == target_state)
                         return true;
-                    std::this_thread::sleep_for(poll_interval);
+
+                    // Use wait hint clamped to 1-10 seconds per Microsoft recommendation
+                    DWORD wait_ms = ssp.dwWaitHint;
+                    if (wait_ms < 1000) wait_ms = 1000;
+                    if (wait_ms > 10000) wait_ms = 10000;
+
+                    // Track checkpoint progress (could reset deadline here if desired)
+                    if (ssp.dwCheckPoint > last_checkpoint)
+                        last_checkpoint = ssp.dwCheckPoint;
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
                 }
-                return current_state() == target_state;
+
+                SERVICE_STATUS_PROCESS ssp{};
+                return query_status(ssp) && ssp.dwCurrentState == target_state;
             }
 
             std::string m_name;
