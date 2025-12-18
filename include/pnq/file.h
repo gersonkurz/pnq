@@ -14,12 +14,16 @@ namespace pnq
         /// @return extension (e.g. ".exe") or empty if none
         inline std::string_view get_extension(std::string_view name)
         {
-            const auto pos = name.rfind('.');
-            if (pos != std::string_view::npos)
-            {
-                return name.substr(pos);
-            }
-            return {};
+            const auto dot_pos = name.rfind('.');
+            if (dot_pos == std::string_view::npos)
+                return {};
+
+            // Ensure the dot is after the last path separator
+            const auto sep_pos = name.find_last_of("/\\");
+            if (sep_pos != std::string_view::npos && sep_pos > dot_pos)
+                return {};
+
+            return name.substr(dot_pos);
         }
 
         /// Get the file extension normalized to lowercase.
@@ -76,7 +80,9 @@ namespace pnq
 
             while (ti < text.size())
             {
-                if (pi < pattern.size() && (pattern[pi] == '?' || ::tolower(pattern[pi]) == ::tolower(text[ti])))
+                if (pi < pattern.size() && (pattern[pi] == '?' ||
+                    std::tolower(static_cast<unsigned char>(pattern[pi])) ==
+                    std::tolower(static_cast<unsigned char>(text[ti]))))
                 {
                     ++pi;
                     ++ti;

@@ -50,10 +50,10 @@ namespace pnq
                 return false;
             }
             m_file.set(handle);
-            const auto result = ::SetFilePointer(handle, 0, nullptr, FILE_END);
-            if (result == INVALID_SET_FILE_POINTER)
+            LARGE_INTEGER offset{0};
+            if (!::SetFilePointerEx(handle, offset, nullptr, FILE_END))
             {
-                PNQ_LOG_LAST_ERROR( "SetFilePointer failed");
+                PNQ_LOG_LAST_ERROR( "SetFilePointerEx failed");
                 m_file.close();
                 return false;
             }

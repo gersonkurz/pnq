@@ -179,26 +179,37 @@ namespace pnq
             static_assert(std::is_integral_v<T>, "format_with_thousands requires an integral type");
 
             bool negative = false;
+            std::make_unsigned_t<T> uvalue;
+
             if constexpr (std::is_signed_v<T>)
             {
                 if (value < 0)
                 {
                     negative = true;
-                    value = -value;
+                    // Convert to unsigned to avoid overflow on INT_MIN
+                    uvalue = static_cast<std::make_unsigned_t<T>>(~value) + 1u;
                 }
+                else
+                {
+                    uvalue = static_cast<std::make_unsigned_t<T>>(value);
+                }
+            }
+            else
+            {
+                uvalue = value;
             }
 
             std::string digits;
-            if (value == 0)
+            if (uvalue == 0)
             {
                 digits = "0";
             }
             else
             {
-                while (value > 0)
+                while (uvalue > 0)
                 {
-                    digits.push_back('0' + static_cast<char>(value % 10));
-                    value /= 10;
+                    digits.push_back('0' + static_cast<char>(uvalue % 10));
+                    uvalue /= 10;
                 }
             }
 
@@ -402,38 +413,29 @@ namespace pnq
             if (svtext.empty())
                 return result;
 
-            // Note: assumes null-terminated input for simplicity
-            auto text = svtext.data();
+            const char *text = svtext.data();
+            const char *end = text + svtext.size();
             bool is_recording_quoted_string = false;
-            auto start = text;
-            for (;;)
+            const char *start = text;
+
+            while (text < end)
             {
                 char c = *(text++);
-                if (!c)
-                {
-                    if (*start)
-                    {
-                        result.push_back(start);
-                    }
-                    break;
-                }
                 if (is_recording_quoted_string)
                 {
                     if (c == '"')
                     {
-                        assert(text - start >= 1);
-                        result.push_back(std::string{start, (size_t)(text - start - 1)});
+                        result.push_back(std::string{start, static_cast<size_t>(text - start - 1)});
                         start = text;
                         is_recording_quoted_string = false;
                     }
                     continue;
                 }
-                else if (handle_quotation_marks and (c == '"'))
+                else if (handle_quotation_marks && (c == '"'))
                 {
-                    assert(text - start >= 1);
                     if (text - start > 1)
                     {
-                        result.push_back(std::string{start, (size_t)(text - start - 1)});
+                        result.push_back(std::string{start, static_cast<size_t>(text - start - 1)});
                     }
                     start = text;
                     is_recording_quoted_string = true;
@@ -443,11 +445,17 @@ namespace pnq
                 // Check if c is one of the separators
                 if (svseparators.find(c) != std::string_view::npos)
                 {
-                    assert(text - start >= 1);
-                    result.push_back(std::string{start, (size_t)(text - start - 1)});
+                    result.push_back(std::string{start, static_cast<size_t>(text - start - 1)});
                     start = text;
                 }
             }
+
+            // Add remaining text
+            if (start < end)
+            {
+                result.push_back(std::string{start, static_cast<size_t>(end - start)});
+            }
+
             return result;
         }
 

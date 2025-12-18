@@ -39,7 +39,7 @@ namespace pnq
 
             explicit wstr_param(const char* input)
                 :
-                m_value{ string::encode_as_utf16(input) },
+                m_value{ input ? string::encode_as_utf16(input) : std::wstring{} },
                 m_is_null{ input == nullptr }
             {
             }
