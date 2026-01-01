@@ -138,7 +138,7 @@ namespace pnq
                     output.append(' ');
                 output.append("^\r\n");
 
-                spdlog::error("{}", output.as_string());
+                PNQ_LOG_ERROR("{}", output.as_string());
                 m_syntax_error_raised = true;
                 return false;
             }

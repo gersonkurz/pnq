@@ -27,17 +27,34 @@ target_compile_options(pnq INTERFACE
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
 )
 
+# Logging backend selection
+option(PNQ_USE_QUILL "Use Quill logging library instead of spdlog" OFF)
+
 # Dependencies - try find_package first, fall back to FetchContent for standalone builds
 include(FetchContent)
 
-find_package(spdlog QUIET)
-if(NOT spdlog_FOUND)
-    message(STATUS "spdlog not found, fetching...")
-    FetchContent_Declare(spdlog
-        GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.15.0
-    )
-    FetchContent_MakeAvailable(spdlog)
+if(PNQ_USE_QUILL)
+    target_compile_definitions(pnq INTERFACE PNQ_USE_QUILL)
+
+    find_package(quill QUIET)
+    if(NOT quill_FOUND)
+        message(STATUS "quill not found, fetching...")
+        FetchContent_Declare(quill
+            GIT_REPOSITORY https://github.com/odygrd/quill.git
+            GIT_TAG v7.5.0
+        )
+        FetchContent_MakeAvailable(quill)
+    endif()
+else()
+    find_package(spdlog QUIET)
+    if(NOT spdlog_FOUND)
+        message(STATUS "spdlog not found, fetching...")
+        FetchContent_Declare(spdlog
+            GIT_REPOSITORY https://github.com/gabime/spdlog.git
+            GIT_TAG v1.15.0
+        )
+        FetchContent_MakeAvailable(spdlog)
+    endif()
 endif()
 
 find_package(tomlplusplus QUIET)
@@ -50,13 +67,27 @@ if(NOT tomlplusplus_FOUND)
     FetchContent_MakeAvailable(tomlplusplus)
 endif()
 
-target_link_libraries(pnq INTERFACE
-    spdlog::spdlog
-    tomlplusplus::tomlplusplus
-)
+if(PNQ_USE_QUILL)
+    target_link_libraries(pnq INTERFACE
+        quill::quill
+        tomlplusplus::tomlplusplus
+    )
+else()
+    target_link_libraries(pnq INTERFACE
+        spdlog::spdlog
+        tomlplusplus::tomlplusplus
+    )
+endif()
 
 # Install rules - only when deps came from find_package (not FetchContent)
-if(spdlog_FOUND AND tomlplusplus_FOUND)
+set(PNQ_LOGGING_DEP_FOUND FALSE)
+if(PNQ_USE_QUILL AND quill_FOUND)
+    set(PNQ_LOGGING_DEP_FOUND TRUE)
+elseif(NOT PNQ_USE_QUILL AND spdlog_FOUND)
+    set(PNQ_LOGGING_DEP_FOUND TRUE)
+endif()
+
+if(PNQ_LOGGING_DEP_FOUND AND tomlplusplus_FOUND)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 

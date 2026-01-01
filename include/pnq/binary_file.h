@@ -147,7 +147,7 @@ namespace pnq
 
                 if (bytes_actually_read < expected_file_size)
                 {
-                    spdlog::error("unexpected early read-end");
+                    PNQ_LOG_ERROR("unexpected early read-end");
                     return false;
                 }
             }
@@ -168,7 +168,7 @@ namespace pnq
             const DWORD bytes_available = static_cast<DWORD>(result.size());
             if (bytes_available == 0)
             {
-                spdlog::error("BinaryFile::read() called with empty buffer");
+                PNQ_LOG_ERROR("BinaryFile::read() called with empty buffer");
                 return false;
             }
 

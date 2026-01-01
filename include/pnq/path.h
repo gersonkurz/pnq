@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
+#include <pnq/log.h>
 #include <pnq/platform.h>
 #include <pnq/string.h>
 #include <pnq/wstring.h>
@@ -240,7 +241,7 @@ namespace pnq
             std::string path;
             if (!environment_variables::get("PATH", path))
             {
-                spdlog::error("Didn't get the PATH variable");
+                PNQ_LOG_ERROR("Didn't get the PATH variable");
                 return false;
             }
 

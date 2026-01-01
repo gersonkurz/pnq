@@ -143,13 +143,78 @@ No sqlite3.h? The headers are empty - zero compile overhead, no link errors. The
 
 Handles the quirks of Win32 console output better than `printf()` and friends. If you ever tried to print a Euro symbol (€) on the Windows command line and got garbage, you know the pain. This actually works.
 
+## Logging
+
+Unified logging macros that work with either [spdlog](https://github.com/gabime/spdlog) (default) or [Quill](https://github.com/odygrd/quill):
+
+```cpp
+#include <pnq/log.h>
+
+PNQ_LOG_INFO("Starting up");
+PNQ_LOG_DEBUG("Processing {} items", count);
+PNQ_LOG_WARN("Cache miss for key '{}'", key);
+PNQ_LOG_ERROR("Failed to open file: {}", path);
+```
+
+All macros use `std::format` syntax. The backend is selected at build time - your code doesn't change.
+
+### Initialization
+
+```cpp
+#include <pnq/logging.h>
+
+// Basic setup - MSVC debug output + optional console
+pnq::logging::initialize_logging("MyApp", true);
+
+// Add file logging with rotation (10MB, 10 backups)
+pnq::logging::reconfigure_logging_for_file("C:/logs/myapp.log");
+
+// Or use AppInit for the full package (logging + config + paths)
+pnq::utils::AppInit app{"MyApp", &settings, true};
+```
+
+### Choosing the backend
+
+```cmake
+# Default - uses spdlog
+cmake -B build
+
+# Use Quill instead
+cmake -B build -DPNQ_USE_QUILL=ON
+```
+
+Why Quill? Lower latency, better for high-throughput scenarios. Why spdlog? More mature, more sinks, wider adoption. Both work fine for typical use.
+
+### Windows error logging
+
+Two convenience macros for the common case of logging Win32 errors:
+
+```cpp
+HANDLE h = CreateFileW(...);
+if (h == INVALID_HANDLE_VALUE)
+{
+    // Logs: "[MyFunc[42]] CreateFile failed: The system cannot find the file specified. (0x00000002)"
+    PNQ_LOG_LAST_ERROR("CreateFile failed");
+    return false;
+}
+
+// Or with a specific error code:
+DWORD err = RegOpenKeyExW(...);
+if (err != ERROR_SUCCESS)
+{
+    PNQ_LOG_WIN_ERROR(err, "RegOpenKeyEx('{}') failed", keyPath);
+}
+```
+
+Both macros automatically include function name, line number, and the human-readable Windows error message.
+
 ## The name
 
 It's a reference to [my website](https://p-nand-q.com) that *any moment now* I will revitalize. Promised!
 
 ## Dependencies
 
-- [spdlog](https://github.com/gabime/spdlog)
+- [spdlog](https://github.com/gabime/spdlog) (default) or [Quill](https://github.com/odygrd/quill) (via `-DPNQ_USE_QUILL=ON`)
 - [tomlplusplus](https://github.com/marzer/tomlplusplus)
 
 ## Integration

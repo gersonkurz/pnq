@@ -1,7 +1,6 @@
 #pragma once
 
 #include <pnq/config/value_interface.h>
-#include <spdlog/spdlog.h>
 
 namespace pnq
 {

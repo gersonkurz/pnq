@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-#include <spdlog/spdlog.h>
+#include <pnq/log.h>
 #include <pnq/sqlite/database.h>
 
 namespace pnq
@@ -217,7 +217,7 @@ namespace pnq
                 case SQLITE_NULL:
                     return bind_null();
                 default:
-                    spdlog::error("Unsupported column type {} in bind_from", source.column_type(column_index));
+                    PNQ_LOG_ERROR("Unsupported column type {} in bind_from", source.column_type(column_index));
                     return false;
                 }
             }

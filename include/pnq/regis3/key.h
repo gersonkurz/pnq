@@ -74,7 +74,7 @@ namespace pnq
                 }
             }
 
-            spdlog::warn("'{}' is not a valid registry path", full_path);
+            PNQ_LOG_WARN("'{}' is not a valid registry path", full_path);
             return nullptr;
         }
 
@@ -136,7 +136,7 @@ namespace pnq
 
                 if (result != ERROR_SUCCESS)
                 {
-                    spdlog::warn("RegOpenKeyEx({}) for reading failed: {}", relative_path, result);
+                    PNQ_LOG_WARN("RegOpenKeyEx({}) for reading failed: {}", relative_path, result);
                     return false;
                 }
 
@@ -693,7 +693,7 @@ namespace pnq
             {
                 // Enable privileges needed for taking ownership
                 if (!enable_privilege(SE_TAKE_OWNERSHIP_NAME))
-                    spdlog::warn("Failed to enable SeTakeOwnershipPrivilege - may not be running elevated");
+                    PNQ_LOG_WARN("Failed to enable SeTakeOwnershipPrivilege - may not be running elevated");
                 enable_privilege(SE_RESTORE_NAME);
                 enable_privilege(SE_BACKUP_NAME);
 
@@ -730,7 +730,7 @@ namespace pnq
                     ::LocalFree(user_sid);
                     return false;
                 }
-                spdlog::info("Took ownership of '{}'", relative_path);
+                PNQ_LOG_INFO("Took ownership of '{}'", relative_path);
 
                 // Step 3: Re-open with WRITE_DAC (now that we own it)
                 result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, WRITE_DAC, &hkey);
@@ -771,7 +771,7 @@ namespace pnq
                     PNQ_LOG_WIN_ERROR(result, "SetSecurityInfo (DACL) failed for '{}'", relative_path);
                     return false;
                 }
-                spdlog::info("Granted full control on '{}'", relative_path);
+                PNQ_LOG_INFO("Granted full control on '{}'", relative_path);
 
                 return true;
             }
@@ -785,14 +785,14 @@ namespace pnq
 
                 if (force && result == ERROR_ACCESS_DENIED)
                 {
-                    spdlog::info("Access denied for '{}', attempting to take ownership", relative_path);
+                    PNQ_LOG_INFO("Access denied for '{}', attempting to take ownership", relative_path);
                     // Try taking ownership and granting access
                     if (take_ownership_and_grant_access(hive, relative_path))
                     {
                         result = ::RegDeleteKeyW(hive, wstr_param{relative_path});
                         if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND)
                         {
-                            spdlog::info("Force-deleted '{}'", relative_path);
+                            PNQ_LOG_INFO("Force-deleted '{}'", relative_path);
                             return true;
                         }
                     }
@@ -812,7 +812,7 @@ namespace pnq
                 HKEY hive = parse_hive(full_path, relative_path);
                 if (!hive || relative_path.empty())
                 {
-                    spdlog::warn("Cannot delete hive root or invalid path: {}", full_path);
+                    PNQ_LOG_WARN("Cannot delete hive root or invalid path: {}", full_path);
                     return false;
                 }
 
@@ -821,7 +821,7 @@ namespace pnq
                 if (!collect_subkeys_depth_first(hive, relative_path, paths_to_delete))
                 {
                     // Even if enumeration fails, try to delete what we can
-                    spdlog::warn("Enumeration failed for '{}', attempting direct deletion", full_path);
+                    PNQ_LOG_WARN("Enumeration failed for '{}', attempting direct deletion", full_path);
                 }
 
                 // Delete from deepest to shallowest

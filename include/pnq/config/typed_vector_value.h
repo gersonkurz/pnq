@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <spdlog/spdlog.h>
 #include <pnq/config/value_interface.h>
 
 namespace pnq

@@ -6,7 +6,7 @@
 #include <string_view>
 #include <utility>
 
-#include <spdlog/spdlog.h>
+#include <pnq/log.h>
 #include <pnq/sqlite/statement.h>
 
 namespace pnq
@@ -30,7 +30,7 @@ namespace pnq
                 }
                 else
                 {
-                    spdlog::error("sqlite::Transaction: Database is not valid, cannot begin transaction.");
+                    PNQ_LOG_ERROR("sqlite::Transaction: Database is not valid, cannot begin transaction.");
                 }
             }
 

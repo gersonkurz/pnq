@@ -5,7 +5,6 @@
 #include <filesystem>
 
 #include <crtdbg.h>
-#include <spdlog/spdlog.h>
 #include <pnq/config/toml_backend.h>
 #include <pnq/config/section.h>
 #include <pnq/logging.h>
@@ -43,14 +42,14 @@ namespace pnq
                 _CrtSetBreakAlloc(-1);
 #endif
                 // Initialize logging with MSVC debug output (and optionally console)
-                auto logger = logging::initialize_logging(app_name, enable_console_logging);
-                logger->info("{} starting up", app_name);
+                logging::initialize_logging(app_name, enable_console_logging);
+                PNQ_LOG_INFO("{} starting up", app_name);
 
                 // Get AppData path and determine config/log paths
                 m_app_data_path = path::get_roaming_app_data(app_name);
                 m_config_path = m_app_data_path / (std::string(app_name) + ".toml");
-                logger->info("AppData path: {}", m_app_data_path.string());
-                logger->info("Loading configuration from: {}", m_config_path.string());
+                PNQ_LOG_INFO("AppData path: {}", m_app_data_path.string());
+                PNQ_LOG_INFO("Loading configuration from: {}", m_config_path.string());
 
                 // Load configuration
                 m_backend = new config::TomlBackend{m_config_path.string()};
@@ -61,7 +60,7 @@ namespace pnq
 
                     // Configure file logging
                     const auto log_file_path = (m_app_data_path / (std::string(app_name) + ".log")).string();
-                    logger->info("Log file path: {}", log_file_path);
+                    PNQ_LOG_INFO("Log file path: {}", log_file_path);
                     logging::reconfigure_logging_for_file(log_file_path);
                 }
             }

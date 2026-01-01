@@ -41,7 +41,7 @@ namespace pnq
             std::ifstream file(m_path);
             if (!file.is_open())
             {
-                spdlog::warn("Failed to open hosts file: {}", m_path);
+                PNQ_LOG_WARN("Failed to open hosts file: {}", m_path);
                 return false;
             }
 
@@ -76,7 +76,7 @@ namespace pnq
             std::ofstream file(m_path);
             if (!file.is_open())
             {
-                spdlog::error("Failed to open hosts file for writing: {}", m_path);
+                PNQ_LOG_ERROR("Failed to open hosts file for writing: {}", m_path);
                 return false;
             }
 
@@ -273,11 +273,11 @@ namespace pnq
             std::filesystem::copy_file(m_path, backup_path, ec);
             if (ec)
             {
-                spdlog::error("Failed to backup hosts file to {}: {}", backup_path, ec.message());
+                PNQ_LOG_ERROR("Failed to backup hosts file to {}: {}", backup_path, ec.message());
                 return false;
             }
 
-            spdlog::info("Created hosts file backup: {}", backup_path);
+            PNQ_LOG_INFO("Created hosts file backup: {}", backup_path);
             return true;
         }
 

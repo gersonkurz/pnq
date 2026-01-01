@@ -7,7 +7,6 @@
 #include <vector>
 
 #include <toml++/toml.hpp>
-#include <spdlog/spdlog.h>
 #include <pnq/config/config_backend.h>
 
 namespace pnq

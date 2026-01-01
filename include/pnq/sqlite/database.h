@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-#include <spdlog/spdlog.h>
+#include <pnq/log.h>
 #include <pnq/pnq.h>
 
 namespace pnq
@@ -106,7 +106,7 @@ namespace pnq
             /// @return true on success
             bool execute(std::string_view statement)
             {
-                spdlog::debug("sqlite::Database executing SQL: {}", statement);
+                PNQ_LOG_DEBUG("sqlite::Database executing SQL: {}", statement);
                 char* error_message = nullptr;
                 int rc = sqlite3_exec(m_db, statement.data(), nullptr, 0, &error_message);
                 if (rc != SQLITE_OK)
@@ -167,7 +167,7 @@ namespace pnq
                 output.append("): ");
                 output.append(message);
                 m_last_error = output;
-                spdlog::error("{}", output);
+                PNQ_LOG_ERROR("{}", output);
                 return false;
             }
 

@@ -356,7 +356,7 @@ namespace pnq
                         // Delete this key and all subkeys
                         if (!key::delete_recursive(entry->get_path()))
                         {
-                            spdlog::warn("Failed to delete registry key: {}", entry->get_path());
+                            PNQ_LOG_WARN("Failed to delete registry key: {}", entry->get_path());
                             success = false;
                         }
                     }
@@ -386,7 +386,7 @@ namespace pnq
                         }
                         else
                         {
-                            spdlog::warn("Failed to open registry key for writing: {}", entry->get_path());
+                            PNQ_LOG_WARN("Failed to open registry key for writing: {}", entry->get_path());
                             success = false;
                         }
                     }
