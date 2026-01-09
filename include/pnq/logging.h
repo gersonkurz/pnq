@@ -44,6 +44,28 @@ namespace pnq::logging
             default:              return quill::LogLevel::Info;
             }
         }
+
+        /// Registry of sinks for the default logger.
+        /// Quill v11 requires all sinks at logger creation time.
+        inline std::vector<std::shared_ptr<quill::Sink>>& sink_registry()
+        {
+            static std::vector<std::shared_ptr<quill::Sink>> sinks;
+            return sinks;
+        }
+
+        /// Recreate the default logger with all registered sinks.
+        inline quill::Logger* recreate_default_logger()
+        {
+            auto& sinks = sink_registry();
+            if (sinks.empty())
+            {
+                // Fallback: create with a null console sink
+                sinks.push_back(quill::Frontend::create_or_get_sink<quill::ConsoleSink>("null_console"));
+            }
+            auto logger = quill::Frontend::create_or_get_logger("default", sinks);
+            logger->set_log_level(quill::LogLevel::Debug);
+            return logger;
+        }
     }
 
     /// Log a Windows error with context (simple string message).
@@ -67,50 +89,36 @@ namespace pnq::logging
     /// @return pointer to the configured logger
     inline quill::Logger* initialize_logging(std::string_view app_name, bool enable_console = false)
     {
+        (void)app_name; // Reserved for future use
+
         // Start the backend thread
         quill::BackendOptions backend_options;
         quill::Backend::start(backend_options);
 
-        std::vector<std::shared_ptr<quill::Sink>> sinks;
+        auto& sinks = detail::sink_registry();
+        sinks.clear();
 
         if (enable_console)
         {
-            auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
-            sinks.push_back(console_sink);
+            sinks.push_back(quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console"));
         }
 
-        quill::Logger* logger;
-        if (sinks.empty())
-        {
-            // Create logger with no sinks initially (will be added later)
-            logger = quill::Frontend::create_or_get_logger(
-                "default",
-                quill::Frontend::create_or_get_sink<quill::ConsoleSink>("null_console"));
-        }
-        else
-        {
-            logger = quill::Frontend::create_or_get_logger("default", std::move(sinks));
-        }
-
-        logger->set_log_level(quill::LogLevel::Debug);
-        return logger;
+        return detail::recreate_default_logger();
     }
 
-    /// Add console sink to existing logger.
+    /// Add console sink to the logger.
+    /// Note: Quill v11 doesn't support per-sink log levels.
     inline void enable_console_logging(level lvl = level::info)
     {
-        auto logger = default_logger();
-        auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
-        logger->add_sink(console_sink);
-        // Note: Quill doesn't support per-sink log levels the same way as spdlog
         (void)lvl;
+        auto& sinks = detail::sink_registry();
+        sinks.push_back(quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console"));
+        detail::recreate_default_logger();
     }
 
-    /// Add rotating file sink to existing logger.
+    /// Add rotating file sink to the logger.
     inline void reconfigure_logging_for_file(const std::string& logFilePath)
     {
-        auto logger = default_logger();
-
         // Force rotation on startup to create new log file
         std::filesystem::path log_path(logFilePath);
         if (std::filesystem::exists(log_path) && std::filesystem::file_size(log_path) > 0)
@@ -143,13 +151,16 @@ namespace pnq::logging
 
         quill::RotatingFileSinkConfig file_config;
         file_config.set_open_mode('w');
-        file_config.set_filename(logFilePath);
         file_config.set_rotation_max_file_size(1024 * 1024 * 10); // 10MB
         file_config.set_max_backup_files(10);
 
+        // Quill v11: filename is first constructor arg, not set via config
         auto file_sink = quill::Frontend::create_or_get_sink<quill::RotatingFileSink>(
-            "file_sink", file_config);
-        logger->add_sink(file_sink);
+            logFilePath, file_config);
+
+        auto& sinks = detail::sink_registry();
+        sinks.push_back(file_sink);
+        detail::recreate_default_logger();
     }
 }
 

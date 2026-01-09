@@ -18,10 +18,10 @@
 namespace pnq::logging
 {
     /// Get the default logger for the application.
+    /// Note: Does not cache - always fetches current logger to support sink reconfiguration.
     inline quill::Logger* default_logger()
     {
-        static quill::Logger* logger = quill::Frontend::get_logger("default");
-        return logger;
+        return quill::Frontend::get_logger("default");
     }
 }
 

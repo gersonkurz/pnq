@@ -1,5 +1,12 @@
 #pragma once
 
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <format>
+#include <string>
+#include <string_view>
+
 namespace pnq
 {
     namespace string
