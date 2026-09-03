@@ -194,6 +194,8 @@ namespace pnq
             }
 
             /// Import from the live registry.
+            /// An absent root key is not a failure: it yields an empty tree. A root key that
+            /// exists but cannot be read is a failure and yields nullptr.
             /// @return Root key entry (caller must release), or nullptr on failure
             key_entry* import() override
             {
@@ -210,7 +212,18 @@ namespace pnq
                 key reg_key{m_root_path};
                 if (!reg_key.open_for_reading())
                 {
-                    // Key doesn't exist - return empty tree
+                    if (reg_key.last_status() != ERROR_FILE_NOT_FOUND)
+                    {
+                        // We could not look. An empty tree here is indistinguishable from a key
+                        // that really has no content, and a caller acting on that would replace
+                        // live data with nothing - so fail instead.
+                        PNQ_LOG_WIN_ERROR(reg_key.last_status(), "cannot import '{}'", m_root_path);
+                        PNQ_RELEASE(m_result);
+                        m_result = nullptr;
+                        return nullptr;
+                    }
+
+                    // Key genuinely doesn't exist - return empty tree
                     PNQ_ADDREF(m_result);
                     return m_result;
                 }

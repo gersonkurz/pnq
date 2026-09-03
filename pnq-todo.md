@@ -33,32 +33,6 @@ The Windows API already provides the distinction. regis3 discards it.
 
 ---
 
-## 2. `registry_importer::import()` never returns nullptr — P1
-
-`include/pnq/regis3/importer.h:198-216`, against the contract declared at `:29` and `:197`
-
-The interface documents *"@return Root key entry (caller must release), or nullptr on
-failure"*. The live-registry implementation cannot fail:
-
-```cpp
-key reg_key{m_root_path};
-if (!reg_key.open_for_reading())
-{
-    // Key doesn't exist - return empty tree
-    PNQ_ADDREF(m_result);
-    return m_result;
-}
-```
-
-Two defects in four lines. The comment asserts "doesn't exist" for a condition that is also
-true when the key exists and is unreadable - `reg_key.last_status()` says which. And the
-documented failure return is
-unreachable, so every caller's `if (!root)` is dead code.
-
-**What it cost downstream:** insti exported an access-denied key as an *empty key*, wrote that
-to a snapshot, and on restore **created** an empty key on the target machine — data replaced
-by nothing, with success reported at every step.
-
 ## 3. `import_recursive()` reports a partial traversal as a complete one — P1
 
 `include/pnq/regis3/importer.h:226-241`
@@ -81,10 +55,11 @@ subtree was skipped.
 A key whose children are partly unreadable captures as a complete-looking subset. Nothing
 returns an error, nothing sets a flag, and the caller has no way to ask.
 
-**Fixing this needs a contract decision**, which is why insti could not work around it: either
-`import()` becomes genuinely fallible (item 2), or the importer carries a
-"traversal was incomplete" flag that a caller can check. Both change `import_interface`, which
-other consumers may rely on.
+**Fixing this needs a contract decision**, which is why insti could not work around it:
+`import()` is already fallible for an unreadable *root*, so either that extends to any
+unreadable subkey - one denied leaf fails the whole import - or the importer carries a
+"traversal was incomplete" flag that a caller can check. The flag changes `import_interface`,
+which other consumers may rely on.
 
 ## 4. `key_iterator` cannot distinguish enumeration failure from end-of-enumeration — P1
 
@@ -174,8 +149,8 @@ recording one it cannot restore faithfully (`shared/src/actions/service_action.c
 
 ## Fix order
 
-**2 → 3 → 4** is one piece of work, not three: 4 is the enumeration half of 3, and both rest
-on `key::last_status()`. Fixing one alone leaves the same defect reachable through the others.
+**3 → 4** is one piece of work, not two: 4 is the enumeration half of 3. Both rest on
+`key::last_status()`. Fixing one alone leaves the same defect reachable through the other.
 
 **5, 6 and 7 are independent** and can go in any order.
 

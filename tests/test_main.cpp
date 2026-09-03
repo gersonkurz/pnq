@@ -1719,6 +1719,32 @@ TEST_CASE("registry::key_entry basics", "[registry]") {
     }
 }
 
+// Make a registry key unreadable to us: a protected DACL granting only SYSTEM. We stay the
+// owner, so READ_CONTROL|WRITE_DAC survive and key::set_permissive_sddl can undo it afterwards.
+static void deny_read_access(const std::string& key_path) {
+    std::string relative;
+    HKEY hive = pnq::regis3::parse_hive(key_path, relative);
+    REQUIRE(hive != nullptr);
+
+    HKEY handle = nullptr;
+    REQUIRE(RegOpenKeyExW(hive, pnq::win32::wstr_param{relative}, 0, WRITE_DAC, &handle) == ERROR_SUCCESS);
+
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    REQUIRE(ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;KA;;;SY)", SDDL_REVISION_1, &sd, nullptr));
+    BOOL dacl_present = FALSE, dacl_defaulted = FALSE;
+    PACL dacl = nullptr;
+    REQUIRE(GetSecurityDescriptorDacl(sd, &dacl_present, &dacl, &dacl_defaulted));
+    REQUIRE(dacl != nullptr); // a NULL DACL would grant everyone everything
+
+    // PROTECTED_DACL_SECURITY_INFORMATION is essential: without it the inherited ACEs from
+    // HKCU\Software survive and still grant us read access.
+    LSTATUS result = SetSecurityInfo(handle, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                     nullptr, nullptr, dacl, nullptr);
+    LocalFree(sd);
+    RegCloseKey(handle);
+    REQUIRE(result == ERROR_SUCCESS);
+}
+
 TEST_CASE("registry::key live access", "[registry]") {
     using pnq::regis3::key;
     using pnq::regis3::value;
@@ -1768,36 +1794,13 @@ TEST_CASE("registry::key live access", "[registry]") {
         REQUIRE_FALSE(bogus.open_for_reading());
         REQUIRE(bogus.last_status() == ERROR_BAD_PATHNAME);
 
-        // A protected DACL granting only SYSTEM leaves us no KEY_READ, so the open is denied.
-        // The owner keeps READ_CONTROL|WRITE_DAC implicitly, which is what lets us clean up.
         const std::string denied_path = test_path + "\\Denied";
         {
             key denied(denied_path);
             REQUIRE(denied.open_for_writing());
             REQUIRE(denied.set_string("Secret", "hidden"));
         }
-
-        std::string relative;
-        HKEY hive = pnq::regis3::parse_hive(denied_path, relative);
-        REQUIRE(hive == HKEY_CURRENT_USER);
-
-        HKEY dac_handle = nullptr;
-        REQUIRE(RegOpenKeyExW(hive, pnq::win32::wstr_param{relative}, 0, WRITE_DAC, &dac_handle) == ERROR_SUCCESS);
-
-        PSECURITY_DESCRIPTOR sd = nullptr;
-        REQUIRE(ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;KA;;;SY)", SDDL_REVISION_1, &sd, nullptr));
-        BOOL dacl_present = FALSE, dacl_defaulted = FALSE;
-        PACL dacl = nullptr;
-        REQUIRE(GetSecurityDescriptorDacl(sd, &dacl_present, &dacl, &dacl_defaulted));
-        REQUIRE(dacl != nullptr); // a NULL DACL would grant everyone everything
-
-        // PROTECTED_DACL_SECURITY_INFORMATION is essential: without it the inherited ACEs
-        // from HKCU\Software survive and still grant us read access.
-        LSTATUS set_result = SetSecurityInfo(dac_handle, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                                             nullptr, nullptr, dacl, nullptr);
-        LocalFree(sd);
-        RegCloseKey(dac_handle);
-        REQUIRE(set_result == ERROR_SUCCESS);
+        deny_read_access(denied_path);
 
         key probe(denied_path);
         CHECK_FALSE(probe.open_for_reading());
@@ -2242,6 +2245,28 @@ TEST_CASE("registry::importer", "[registry]") {
         REQUIRE_FALSE(result->has_keys());
 
         result->release();
+    }
+
+    SECTION("registry_importer fails on an unreadable key") {
+        // An unreadable root must not import as an empty tree - a caller that restored that
+        // would replace the live key with nothing.
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_importer_denied_" + std::to_string(GetCurrentProcessId());
+        {
+            key denied(test_path);
+            REQUIRE(denied.open_for_writing());
+            REQUIRE(denied.set_string("Secret", "hidden"));
+        }
+        deny_read_access(test_path);
+
+        registry_importer importer(test_path);
+        CHECK(importer.import() == nullptr);
+
+        // A path naming no known hive is a failure too, not an absence.
+        registry_importer bogus("NOT_A_HIVE\\Whatever");
+        CHECK(bogus.import() == nullptr);
+
+        REQUIRE(key::set_permissive_sddl(test_path));
+        REQUIRE(key::delete_recursive(test_path));
     }
 
     SECTION("registry_importer reads subkeys recursively") {

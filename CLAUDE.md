@@ -100,10 +100,10 @@ code meant to be portable; `unicode.h` is the portable conversion layer, `string
 
 ## Known open defects
 
-`pnq-todo.md` lists six verified defects with stable IDs, all the same mistake - a boolean where a tri-state is needed
-(P1: `registry_importer::import` never returns nullptr, `import_recursive` and `key_iterator` hide partial traversals).
-Items 2-4 are one piece of work in that order. Read it before touching `regis3/iterators.h`, `importer.h`,
-`file::exists`, `directory::exists`, or `create_service`.
+`pnq-todo.md` lists five verified defects with stable IDs, all the same mistake - a boolean where a tri-state is needed
+(P1: `import_recursive` and `key_iterator` hide partial traversals). Items 3-4 are one piece of work in that order, and
+item 3 still needs a contract decision. Read it before touching `regis3/iterators.h`, `importer.h`, `file::exists`,
+`directory::exists`, or `create_service`.
 
 ## Tests
 
