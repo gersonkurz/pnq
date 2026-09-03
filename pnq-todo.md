@@ -27,34 +27,11 @@ needed.**
 `RegOpenKeyEx` and `RegEnumKeyEx` each distinguish "not there" (`ERROR_FILE_NOT_FOUND`,
 `ERROR_NO_MORE_ITEMS`) from "could not look" (`ERROR_ACCESS_DENIED`, and everything else).
 regis3 now carries that distinction through `key::last_status()`, the enumerators'
-`last_status()`, and `registry_importer::was_complete()`. What is left below is the same
-mistake outside regis3.
+`last_status()`, and `registry_importer::was_complete()`; `file::exists()` and
+`directory::exists()` carry it through `GetLastError()`. Item 7 below is a different mistake
+with the same consequence: a value silently replaced by another.
 
 ---
-
-## Outside regis3
-
-Same defect class, different modules. Listed here because they came from the same review and
-have the same shape.
-
-## 6. `file::exists()` and `directory::exists()` collapse "absent" and "unreadable" — P2
-
-`include/pnq/file.h:40-53`, `include/pnq/directory.h:15-17`
-
-`file::exists()` inspects `GetLastError()`, logs anything that is not
-`ERROR_FILE_NOT_FOUND` / `ERROR_PATH_NOT_FOUND`, and then returns `false` anyway — the same
-answer as genuine absence. `directory::exists()` does not check `GetLastError()` at all.
-
-Same shape as the `open_for_reading()` defect, in a different namespace: the caller cannot
-tell a missing file from one it lacks permission to stat. `key::last_status()` is the pattern
-to copy.
-
-**How insti works around it:** `probe_path()`, a three-valued probe that calls
-`GetFileAttributesW` directly and inspects the error. Note the measurement, since the obvious
-test does not reproduce it: making an attribute query fail needs a DENY on the parent
-directory's `FILE_LIST_DIRECTORY` **and** on the file's `FILE_READ_ATTRIBUTES`. Holding the
-file open with `FILE_SHARE_NONE` does not do it — an attribute-only query is answered from the
-parent's directory entry when it can be, skipping the sharing check.
 
 ## 7. `create_service()` silently downgrades a boot-start driver — P2
 
@@ -75,9 +52,3 @@ A `DWORD` whose valid range includes zero cannot use zero as "unset". Either tak
 
 **How insti works around it:** it refuses to capture a boot-start service rather than
 recording one it cannot restore faithfully (`shared/src/actions/service_action.cpp:109-117`).
-
----
-
-## Fix order
-
-**6 and 7 are independent** and can go in either order.

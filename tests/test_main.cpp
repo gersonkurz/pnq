@@ -1181,6 +1181,92 @@ TEST_CASE("directory::exists", "[directory]") {
     }
 }
 
+// Replace a file or directory's DACL with a protected one granting only the given SDDL trustee
+// spec. We stay the owner, so WRITE_DAC survives and the change can be undone.
+static void set_file_dacl(const std::wstring& path, const wchar_t* sddl) {
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    REQUIRE(ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, &sd, nullptr));
+    BOOL dacl_present = FALSE, dacl_defaulted = FALSE;
+    PACL dacl = nullptr;
+    REQUIRE(GetSecurityDescriptorDacl(sd, &dacl_present, &dacl, &dacl_defaulted));
+    REQUIRE(dacl != nullptr); // a NULL DACL would grant everyone everything
+
+    DWORD result = SetNamedSecurityInfoW(const_cast<wchar_t*>(path.c_str()), SE_FILE_OBJECT,
+                                         DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                         nullptr, nullptr, dacl, nullptr);
+    LocalFree(sd);
+    REQUIRE(result == ERROR_SUCCESS);
+}
+
+TEST_CASE("file/directory exists says why it answered false", "[file][directory]") {
+    namespace f = pnq::file;
+    namespace d = pnq::directory;
+
+    SECTION("present clears the last error") {
+        // A stale error from an unrelated call must not read as a reason
+        SetLastError(ERROR_ACCESS_DENIED);
+        REQUIRE(f::exists("C:\\Windows\\System32\\cmd.exe"));
+        CHECK(GetLastError() == ERROR_SUCCESS);
+
+        SetLastError(ERROR_ACCESS_DENIED);
+        REQUIRE(d::exists("C:\\Windows"));
+        CHECK(GetLastError() == ERROR_SUCCESS);
+    }
+
+    SECTION("absent says absent") {
+        REQUIRE_FALSE(f::exists("C:\\this_file_does_not_exist_12345.txt"));
+        CHECK(GetLastError() == ERROR_FILE_NOT_FOUND);
+
+        REQUIRE_FALSE(f::exists("C:\\no_such_directory_12345\\file.txt"));
+        CHECK(GetLastError() == ERROR_PATH_NOT_FOUND);
+
+        REQUIRE_FALSE(d::exists("C:\\this_directory_does_not_exist_12345"));
+        CHECK(GetLastError() == ERROR_FILE_NOT_FOUND);
+    }
+
+    SECTION("a file is not a missing directory") {
+        REQUIRE_FALSE(d::exists("C:\\Windows\\System32\\cmd.exe"));
+        CHECK(GetLastError() == ERROR_DIRECTORY);
+    }
+
+    SECTION("unreadable is not absent") {
+        // Making an attribute query fail takes both denials: an attribute-only query is
+        // answered from the parent's directory entry when it can be, so denying the file
+        // alone is not enough.
+        wchar_t temp_path[MAX_PATH];
+        REQUIRE(GetTempPathW(MAX_PATH, temp_path) != 0);
+        const std::wstring dir = std::wstring{temp_path} + L"pnq_probe_" + std::to_wstring(GetCurrentProcessId());
+        const std::wstring file = dir + L"\\secret.txt";
+        const std::wstring subdir = dir + L"\\secret_dir";
+
+        REQUIRE(CreateDirectoryW(dir.c_str(), nullptr));
+        REQUIRE(CreateDirectoryW(subdir.c_str(), nullptr));
+        HANDLE h = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        REQUIRE(h != INVALID_HANDLE_VALUE);
+        CloseHandle(h);
+
+        set_file_dacl(file, L"D:P(A;;FA;;;SY)");
+        set_file_dacl(subdir, L"D:P(A;;FA;;;SY)");
+        set_file_dacl(dir, L"D:P(A;;FA;;;SY)");
+
+        const std::string utf8_file = pnq::string::encode_as_utf8(file);
+        CHECK_FALSE(f::exists(utf8_file));
+        CHECK(GetLastError() == ERROR_ACCESS_DENIED);
+        CHECK(GetLastError() != ERROR_FILE_NOT_FOUND); // the defect: unreadable read as absent
+
+        CHECK_FALSE(d::exists(pnq::string::encode_as_utf8(subdir)));
+        CHECK(GetLastError() == ERROR_ACCESS_DENIED);
+        CHECK(GetLastError() != ERROR_FILE_NOT_FOUND);
+
+        set_file_dacl(dir, L"D:P(A;;FA;;;WD)");
+        set_file_dacl(subdir, L"D:P(A;;FA;;;WD)");
+        set_file_dacl(file, L"D:P(A;;FA;;;WD)");
+        REQUIRE(DeleteFileW(file.c_str()));
+        REQUIRE(RemoveDirectoryW(subdir.c_str()));
+        REQUIRE(RemoveDirectoryW(dir.c_str()));
+    }
+}
+
 TEST_CASE("directory::system", "[directory]") {
     auto result = pnq::directory::system();
     REQUIRE_FALSE(result.empty());

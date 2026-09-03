@@ -35,6 +35,13 @@ namespace pnq
         }
 
         /// Check if a file exists.
+        ///
+        /// A false answer can mean "not there" or "could not look". Callers that need to tell
+        /// those apart read GetLastError(), which this function always sets: ERROR_SUCCESS when
+        /// the file exists, ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND when it genuinely does
+        /// not, and the underlying failure (typically ERROR_ACCESS_DENIED) when the query could
+        /// not be answered.
+        ///
         /// @param path file path to check
         /// @return true if file exists
         inline bool exists(std::string_view path)
@@ -42,13 +49,16 @@ namespace pnq
             const auto wide_path = string::encode_as_utf16(path);
             const auto dwAttributes = ::GetFileAttributesW(wide_path.c_str());
             if (dwAttributes != INVALID_FILE_ATTRIBUTES)
+            {
+                ::SetLastError(ERROR_SUCCESS);
                 return true;
+            }
 
-            const auto error = GetLastError();
-            if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
-                return false;
+            const auto error = ::GetLastError();
+            if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+                PNQ_LOG_WIN_ERROR(error, "GetFileAttributes('{}') failed", path);
 
-            PNQ_LOG_WIN_ERROR(error, "GetFileAttributes('{}') failed", path);
+            ::SetLastError(error); // logging clobbers it
             return false;
         }
 

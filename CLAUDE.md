@@ -100,9 +100,8 @@ code meant to be portable; `unicode.h` is the portable conversion layer, `string
 
 ## Known open defects
 
-`pnq-todo.md` lists two remaining verified defects with stable IDs (both P2, independent of each other):
-`file::exists`/`directory::exists` collapse "absent" and "unreadable", and `create_service` silently downgrades a
-boot-start driver. Read it before touching `file::exists`, `directory::exists`, or `create_service`.
+`pnq-todo.md` has one verified defect left (item 7, P2): `create_service` treats `start_type == 0` as "unset", so a
+boot-start driver is silently downgraded to demand-start. Read it before touching `create_service`.
 
 ## Tests
 
