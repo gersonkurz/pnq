@@ -872,7 +872,7 @@ TEST_CASE("path::normalize", "[path]") {
 
     SECTION("expands environment variables") {
         auto result = p::normalize("%WINDIR%\\system32");
-        REQUIRE(result.find("Windows") != std::string::npos);
+        REQUIRE(pnq::string::contains_nocase(result, "windows"));
         REQUIRE(result.find("system32") != std::string::npos);
         REQUIRE(result.find('%') == std::string::npos);
     }
@@ -1192,7 +1192,7 @@ TEST_CASE("directory::system", "[directory]") {
 TEST_CASE("directory::windows", "[directory]") {
     auto result = pnq::directory::windows();
     REQUIRE_FALSE(result.empty());
-    REQUIRE(result.find("Windows") != std::string::npos);
+    REQUIRE(pnq::string::contains_nocase(result, "windows"));
 }
 
 TEST_CASE("directory::current", "[directory]") {
@@ -1400,7 +1400,7 @@ TEST_CASE("environment_variables::get", "[environment_variables]") {
     SECTION("get WINDIR") {
         std::string value;
         REQUIRE(ev::get("WINDIR", value));
-        REQUIRE(value.find("Windows") != std::string::npos);
+        REQUIRE(pnq::string::contains_nocase(value, "windows"));
     }
 
     SECTION("get non-existent variable") {
