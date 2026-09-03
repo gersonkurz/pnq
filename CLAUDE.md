@@ -98,11 +98,6 @@ Everything public is UTF-8 `std::string`. `win32/wstr_param.h` does the UTF-16 c
 (implicit, SSO-style). `platform.h` provides `pnq::char16`/`string16` (wchar_t on Windows, char16_t elsewhere) for
 code meant to be portable; `unicode.h` is the portable conversion layer, `string::encode_as_utf8/utf16` are the legacy wrappers.
 
-## Known open defects
-
-`pnq-todo.md` has one verified defect left (item 7, P2): `create_service` treats `start_type == 0` as "unset", so a
-boot-start driver is silently downgraded to demand-start. Read it before touching `create_service`.
-
 ## Tests
 
 Single file: `tests/test_main.cpp` (Catch2 v3, `TEST_CASE`/`SECTION`, tags like `[string]`, `[registry]`, `[service]`,

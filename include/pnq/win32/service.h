@@ -21,8 +21,14 @@ namespace pnq
             std::string binary_path;
             std::string account;
             std::vector<std::string> dependencies;
-            DWORD start_type = 0;
-            DWORD service_type = 0;
+            /// SERVICE_BOOT_START, SERVICE_SYSTEM_START, SERVICE_AUTO_START, SERVICE_DEMAND_START
+            /// or SERVICE_DISABLED. Passed to CreateService verbatim - note that
+            /// SERVICE_BOOT_START is 0, so this field cannot use 0 to mean "unset".
+            DWORD start_type = SERVICE_DEMAND_START;
+
+            /// SERVICE_WIN32_OWN_PROCESS, SERVICE_KERNEL_DRIVER, etc. Passed verbatim; 0 is not
+            /// a valid service type and CreateService will reject it.
+            DWORD service_type = SERVICE_WIN32_OWN_PROCESS;
         };
         /// Base RAII wrapper for SC_HANDLE (service control handles).
         /// Logs errors on CloseServiceHandle failure.
@@ -507,8 +513,8 @@ namespace pnq
                 wstr_param(config.name),
                 wstr_param(config.display_name),
                 desired_access,
-                config.service_type ? config.service_type : SERVICE_WIN32_OWN_PROCESS,
-                config.start_type ? config.start_type : SERVICE_DEMAND_START,
+                config.service_type,
+                config.start_type,
                 SERVICE_ERROR_NORMAL,
                 wstr_param(config.binary_path),
                 nullptr,  // load order group

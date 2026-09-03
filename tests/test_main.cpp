@@ -2804,6 +2804,85 @@ TEST_CASE("win32::SCM", "[service]") {
     }
 }
 
+TEST_CASE("win32::ServiceConfig start_type", "[service]") {
+    using pnq::win32::SCM;
+    using pnq::win32::ServiceConfig;
+
+    SECTION("defaults are the real values, not 0") {
+        // create_service used to substitute these when the field was 0, which silently turned
+        // SERVICE_BOOT_START (which IS 0) into SERVICE_DEMAND_START.
+        ServiceConfig config;
+        CHECK(config.start_type == SERVICE_DEMAND_START);
+        CHECK(config.service_type == SERVICE_WIN32_OWN_PROCESS);
+    }
+
+    SECTION("query_config reports a boot-start driver as 0") {
+        // Whatever pnq does with it, this is the value it has to carry: the machine's own
+        // boot-start drivers come back as SERVICE_BOOT_START, which is 0.
+        SCM scm;
+        REQUIRE(scm);
+
+        // volmgr is a boot-start driver on every supported Windows
+        auto svc = scm.open_service("volmgr", SERVICE_QUERY_CONFIG);
+        if (!svc) {
+            WARN("volmgr not readable, skipping");
+            return;
+        }
+
+        auto config = svc.query_config();
+        REQUIRE(config.has_value());
+        CHECK(config->start_type == SERVICE_BOOT_START);
+        CHECK(config->start_type == 0);
+    }
+}
+
+TEST_CASE("win32::create_service preserves boot start", "[service][!mayfail]") {
+    using pnq::win32::SCM;
+    using pnq::win32::ServiceConfig;
+
+    BOOL is_elevated = FALSE;
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(elevation);
+        if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size)) {
+            is_elevated = elevation.TokenIsElevated;
+        }
+        CloseHandle(token);
+    }
+    if (!is_elevated) {
+        WARN("Not running elevated, skipping create_service test");
+        return;
+    }
+
+    SCM scm(SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
+    REQUIRE(scm);
+
+    ServiceConfig config;
+    config.name = "pnq_test_bootdrv_" + std::to_string(GetCurrentProcessId());
+    config.display_name = "pnq test boot driver";
+    config.binary_path = "\\SystemRoot\\System32\\drivers\\pnq_does_not_exist.sys";
+    config.service_type = SERVICE_KERNEL_DRIVER;
+    config.start_type = SERVICE_BOOT_START;  // == 0, the whole point
+
+    {
+        auto created = scm.create_service(config);
+        REQUIRE(created);
+
+        // Read it back: demand-start here would mean the 0 was swallowed
+        auto readback = created.query_config();
+        REQUIRE(readback.has_value());
+        CHECK(readback->start_type == SERVICE_BOOT_START);
+        CHECK(readback->start_type != SERVICE_DEMAND_START);
+
+        REQUIRE(created.remove());
+    }
+
+    // Gone, so nothing boot-start is left behind on this machine
+    auto gone = scm.open_service(config.name, SERVICE_QUERY_CONFIG);
+    CHECK_FALSE(gone);
+}
+
 TEST_CASE("win32::Service", "[service]") {
     using pnq::win32::SCM;
     using pnq::win32::Service;
