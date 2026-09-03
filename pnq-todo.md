@@ -28,28 +28,7 @@ needed.**
 `ERROR_NO_MORE_ITEMS`) from "could not look" (`ERROR_ACCESS_DENIED`, and everything else).
 regis3 now carries that distinction through `key::last_status()`, the enumerators'
 `last_status()`, and `registry_importer::was_complete()`. What is left below is the same
-mistake outside regis3, plus one API that promises more than it checks.
-
----
-
-## 5. `create_importer_from_string()` validates only the header — P2
-
-`include/pnq/regis3/importer.h:122-141`
-
-The factory checks for `HEADER_FORMAT5`, `HEADER_FORMAT4` or a UTF-8 BOM and returns an
-importer. The body is not parsed until `import()` is called, so a **successfully constructed
-importer says almost nothing about whether the content is parsable.**
-
-Not wrong, but the name invites the wrong reading, and a caller validating input will get it
-wrong on the first try.
-
-**What it cost downstream:** insti used a successful construction as its "is this .reg valid"
-check at preflight. A malformed body with a valid header passed, the live registry key was
-cleaned, and the restore then failed — the live key destroyed on the strength of a check that
-had not parsed anything. insti now runs the real parse and releases the result
-(`shared/src/actions/registry.cpp:147-161`).
-
-Either document that construction is a format sniff, or add a `validate()` that parses.
+mistake outside regis3.
 
 ---
 
@@ -101,4 +80,4 @@ recording one it cannot restore faithfully (`shared/src/actions/service_action.c
 
 ## Fix order
 
-**5, 6 and 7 are independent** and can go in any order.
+**6 and 7 are independent** and can go in either order.

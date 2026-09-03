@@ -100,10 +100,9 @@ code meant to be portable; `unicode.h` is the portable conversion layer, `string
 
 ## Known open defects
 
-`pnq-todo.md` lists three remaining verified defects with stable IDs (all P2, independent of each other):
-`create_importer_from_string` only sniffs the header, `file::exists`/`directory::exists` collapse "absent" and
-"unreadable", and `create_service` silently downgrades a boot-start driver. Read it before touching `importer.h`,
-`file::exists`, `directory::exists`, or `create_service`.
+`pnq-todo.md` lists two remaining verified defects with stable IDs (both P2, independent of each other):
+`file::exists`/`directory::exists` collapse "absent" and "unreadable", and `create_service` silently downgrades a
+boot-start driver. Read it before touching `file::exists`, `directory::exists`, or `create_service`.
 
 ## Tests
 

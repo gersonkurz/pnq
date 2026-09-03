@@ -49,6 +49,9 @@ namespace pnq
             }
 
             /// Import the .REG file content.
+            /// This is where the body is parsed - the factory that produced this importer only
+            /// checked the header - so nullptr here means the content did not parse. The result
+            /// is cached, so a second call re-uses the first parse.
             /// @return Root key entry (caller must release), or nullptr on failure
             key_entry* import() override
             {
@@ -116,9 +119,17 @@ namespace pnq
         // =====================================================================
 
         /// Auto-detect format and create appropriate importer from string content.
+        ///
+        /// This is a header sniff, not a validation. Only the leading REGEDIT4 /
+        /// "Windows Registry Editor Version 5.00" marker (optionally behind a UTF-8 BOM) is
+        /// examined; the body is not parsed until import() is called. A non-null return
+        /// therefore says nothing about whether the content is parsable - a file with a valid
+        /// header and a malformed body gets an importer here and fails later, in import().
+        /// To find out whether content really parses, call import() and release the result.
+        ///
         /// @param content .REG file content
         /// @param options Import options
-        /// @return Importer instance, or nullptr if format not recognized
+        /// @return Importer instance, or nullptr if the header was not recognized
         inline std::unique_ptr<regfile_importer> create_importer_from_string(
             std::string_view content,
             import_options options = import_options::none)
@@ -152,9 +163,15 @@ namespace pnq
         }
 
         /// Read file and create appropriate importer.
+        ///
+        /// Like create_importer_from_string(), this only sniffs the header - the body is not
+        /// parsed until import(). Do not use a non-null return as a "this .REG file is valid"
+        /// check; call import() for that.
+        ///
         /// @param filename Path to .REG file
         /// @param options Import options
-        /// @return Importer instance, or nullptr if file can't be read or format not recognized
+        /// @return Importer instance, or nullptr if the file is empty or unreadable, or its
+        ///         header was not recognized
         inline std::unique_ptr<regfile_importer> create_importer_from_file(
             std::string_view filename,
             import_options options = import_options::none)
