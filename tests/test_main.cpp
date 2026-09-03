@@ -1756,6 +1756,56 @@ TEST_CASE("registry::key live access", "[registry]") {
     SECTION("open nonexistent key fails") {
         key k("HKEY_LOCAL_MACHINE\\SOFTWARE\\ThisKeyDoesNotExist_12345");
         REQUIRE_FALSE(k.open_for_reading());
+        REQUIRE(k.last_status() == ERROR_FILE_NOT_FOUND);
+    }
+
+    SECTION("last_status tells absent from unreadable") {
+        key ok("HKEY_CURRENT_USER\\Software");
+        REQUIRE(ok.open_for_reading());
+        REQUIRE(ok.last_status() == ERROR_SUCCESS);
+
+        key bogus("NOT_A_HIVE\\Whatever");
+        REQUIRE_FALSE(bogus.open_for_reading());
+        REQUIRE(bogus.last_status() == ERROR_BAD_PATHNAME);
+
+        // A protected DACL granting only SYSTEM leaves us no KEY_READ, so the open is denied.
+        // The owner keeps READ_CONTROL|WRITE_DAC implicitly, which is what lets us clean up.
+        const std::string denied_path = test_path + "\\Denied";
+        {
+            key denied(denied_path);
+            REQUIRE(denied.open_for_writing());
+            REQUIRE(denied.set_string("Secret", "hidden"));
+        }
+
+        std::string relative;
+        HKEY hive = pnq::regis3::parse_hive(denied_path, relative);
+        REQUIRE(hive == HKEY_CURRENT_USER);
+
+        HKEY dac_handle = nullptr;
+        REQUIRE(RegOpenKeyExW(hive, pnq::win32::wstr_param{relative}, 0, WRITE_DAC, &dac_handle) == ERROR_SUCCESS);
+
+        PSECURITY_DESCRIPTOR sd = nullptr;
+        REQUIRE(ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;KA;;;SY)", SDDL_REVISION_1, &sd, nullptr));
+        BOOL dacl_present = FALSE, dacl_defaulted = FALSE;
+        PACL dacl = nullptr;
+        REQUIRE(GetSecurityDescriptorDacl(sd, &dacl_present, &dacl, &dacl_defaulted));
+        REQUIRE(dacl != nullptr); // a NULL DACL would grant everyone everything
+
+        // PROTECTED_DACL_SECURITY_INFORMATION is essential: without it the inherited ACEs
+        // from HKCU\Software survive and still grant us read access.
+        LSTATUS set_result = SetSecurityInfo(dac_handle, SE_REGISTRY_KEY, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                             nullptr, nullptr, dacl, nullptr);
+        LocalFree(sd);
+        RegCloseKey(dac_handle);
+        REQUIRE(set_result == ERROR_SUCCESS);
+
+        key probe(denied_path);
+        CHECK_FALSE(probe.open_for_reading());
+        CHECK(probe.last_status() == ERROR_ACCESS_DENIED);
+        CHECK(probe.last_status() != ERROR_FILE_NOT_FOUND); // the defect: unreadable read as absent
+
+        REQUIRE(key::set_permissive_sddl(denied_path));
+        REQUIRE(key::delete_recursive(test_path));
     }
 
     SECTION("write and read back values") {

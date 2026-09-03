@@ -53,6 +53,12 @@ The status code is logged and then thrown away. A caller gets one bit and cannot
 companion that returns the reason — or an out-parameter on the existing call — is enough;
 the signature need not change for existing callers.
 
+**FIXED.** `key::last_status()` returns the raw `LSTATUS` of the last `open_for_reading()` /
+`open_for_writing()` call (`ERROR_BAD_PATHNAME` when the path names no known hive). A caller
+gets `Present / Absent / Unreadable` from `open_for_reading()` plus
+`last_status() == ERROR_FILE_NOT_FOUND`. Signatures unchanged. Covered by
+`registry::key live access` → "last_status tells absent from unreadable".
+
 **How insti works around it:** `probe_registry_key()` bypasses regis3 entirely and calls
 `RegOpenKeyExW` directly to get a three-valued `Present / Absent / Unreadable`
 (`shared/src/actions/action.cpp`). That function exists only because regis3 cannot answer the

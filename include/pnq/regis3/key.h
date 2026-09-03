@@ -95,7 +95,8 @@ namespace pnq
                 : m_path{path},
                   m_key{nullptr},
                   m_is_root_key{false},
-                  m_has_write_permissions{false}
+                  m_has_write_permissions{false},
+                  m_last_status{ERROR_SUCCESS}
             {
             }
 
@@ -111,16 +112,24 @@ namespace pnq
             // =================================================================
 
             /// Open the key for reading.
-            /// @return true if successful
+            /// @return true if successful. On false, last_status() says why:
+            ///         ERROR_FILE_NOT_FOUND means the key is absent, anything else
+            ///         (typically ERROR_ACCESS_DENIED) means it could not be read.
             bool open_for_reading()
             {
                 if (m_key != nullptr)
+                {
+                    m_last_status = ERROR_SUCCESS;
                     return true;
+                }
 
                 std::string relative_path;
                 HKEY hive = parse_hive(m_path, relative_path);
                 if (!hive)
+                {
+                    m_last_status = ERROR_BAD_PATHNAME;
                     return false;
+                }
 
                 // If this is a root key (no relative path)
                 if (relative_path.empty())
@@ -128,15 +137,16 @@ namespace pnq
                     m_key = hive;
                     m_is_root_key = true;
                     m_has_write_permissions = true; // root keys have implicit access
+                    m_last_status = ERROR_SUCCESS;
                     return true;
                 }
 
                 HKEY hkey = nullptr;
-                LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
+                m_last_status = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
 
-                if (result != ERROR_SUCCESS)
+                if (m_last_status != ERROR_SUCCESS)
                 {
-                    PNQ_LOG_WARN("RegOpenKeyEx({}) for reading failed: {}", relative_path, result);
+                    PNQ_LOG_WIN_ERROR(m_last_status, "RegOpenKeyEx('{}') for reading failed", m_path);
                     return false;
                 }
 
@@ -302,18 +312,23 @@ namespace pnq
             }
 
         public:
-
             /// Open the key for writing. Creates the key if it doesn't exist.
             /// @return true if successful
             bool open_for_writing()
             {
                 if (m_has_write_permissions)
+                {
+                    m_last_status = ERROR_SUCCESS;
                     return true;
+                }
 
                 std::string relative_path;
                 HKEY hive = parse_hive(m_path, relative_path);
                 if (!hive)
+                {
+                    m_last_status = ERROR_BAD_PATHNAME;
                     return false;
+                }
 
                 // Root key
                 if (relative_path.empty())
@@ -321,6 +336,7 @@ namespace pnq
                     m_key = hive;
                     m_is_root_key = true;
                     m_has_write_permissions = true;
+                    m_last_status = ERROR_SUCCESS;
                     return true;
                 }
 
@@ -335,12 +351,14 @@ namespace pnq
 
                     if (result != ERROR_SUCCESS)
                     {
+                        m_last_status = result;
                         PNQ_LOG_WIN_ERROR(result, "RegCreateKeyEx('{}') failed", m_path);
                         return false;
                     }
                 }
                 else if (result != ERROR_SUCCESS)
                 {
+                    m_last_status = result;
                     PNQ_LOG_WIN_ERROR(result, "RegOpenKeyEx('{}') for writing failed", m_path);
                     return false;
                 }
@@ -354,7 +372,17 @@ namespace pnq
                 m_key = hkey;
                 m_is_root_key = false;
                 m_has_write_permissions = true;
+                m_last_status = ERROR_SUCCESS;
                 return true;
+            }
+
+            /// Status of the last open_for_reading()/open_for_writing() call.
+            /// ERROR_BAD_PATHNAME means the path named no known hive; otherwise this is
+            /// the raw LSTATUS from the registry API, so callers can tell "not there"
+            /// (ERROR_FILE_NOT_FOUND) from "could not look" (e.g. ERROR_ACCESS_DENIED).
+            LSTATUS last_status() const
+            {
+                return m_last_status;
             }
 
             /// Close the key handle.
@@ -883,6 +911,7 @@ namespace pnq
             HKEY m_key;
             bool m_is_root_key;
             bool m_has_write_permissions;
+            LSTATUS m_last_status;
         };
 
     } // namespace regis3
