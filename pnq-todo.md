@@ -26,43 +26,12 @@ tri-state is needed.**
 
 `RegOpenKeyEx` and `RegEnumKeyEx` each distinguish "not there" (`ERROR_FILE_NOT_FOUND`,
 `ERROR_NO_MORE_ITEMS`) from "could not look" (`ERROR_ACCESS_DENIED`, and everything else).
-regis3 collapses that at the primitive and then cannot recover it at any layer above, so a
-key nobody is allowed to read is reported exactly like a key that is not there.
+`key::last_status()` now reports it at the primitive, but every layer above still throws it
+away, so a key nobody is allowed to read is reported exactly like a key that is not there.
 
 The Windows API already provides the distinction. regis3 discards it.
 
 ---
-
-## 1. `open_for_reading()` collapses "absent" and "unreadable" — P1
-
-`include/pnq/regis3/key.h:115-147`
-
-```cpp
-LSTATUS result = ::RegOpenKeyExW(hive, wstr_param{relative_path}, 0, KEY_READ, &hkey);
-if (result != ERROR_SUCCESS)
-{
-    PNQ_LOG_WARN("RegOpenKeyEx({}) for reading failed: {}", relative_path, result);
-    return false;
-}
-```
-
-The status code is logged and then thrown away. A caller gets one bit and cannot tell
-`ERROR_FILE_NOT_FOUND` from `ERROR_ACCESS_DENIED`.
-
-**This is the primitive the rest of the list rests on**, so it is the first thing to fix. A
-companion that returns the reason — or an out-parameter on the existing call — is enough;
-the signature need not change for existing callers.
-
-**FIXED.** `key::last_status()` returns the raw `LSTATUS` of the last `open_for_reading()` /
-`open_for_writing()` call (`ERROR_BAD_PATHNAME` when the path names no known hive). A caller
-gets `Present / Absent / Unreadable` from `open_for_reading()` plus
-`last_status() == ERROR_FILE_NOT_FOUND`. Signatures unchanged. Covered by
-`registry::key live access` → "last_status tells absent from unreadable".
-
-**How insti works around it:** `probe_registry_key()` bypasses regis3 entirely and calls
-`RegOpenKeyExW` directly to get a three-valued `Present / Absent / Unreadable`
-(`shared/src/actions/action.cpp`). That function exists only because regis3 cannot answer the
-question.
 
 ## 2. `registry_importer::import()` never returns nullptr — P1
 
@@ -82,7 +51,8 @@ if (!reg_key.open_for_reading())
 ```
 
 Two defects in four lines. The comment asserts "doesn't exist" for a condition that is also
-true when the key exists and is unreadable (item 1). And the documented failure return is
+true when the key exists and is unreadable - `reg_key.last_status()` says which. And the
+documented failure return is
 unreachable, so every caller's `if (!root)` is dead code.
 
 **What it cost downstream:** insti exported an access-denied key as an *empty key*, wrote that
@@ -169,8 +139,9 @@ have the same shape.
 `ERROR_FILE_NOT_FOUND` / `ERROR_PATH_NOT_FOUND`, and then returns `false` anyway — the same
 answer as genuine absence. `directory::exists()` does not check `GetLastError()` at all.
 
-Item 1 in a different namespace: the caller cannot tell a missing file from one it lacks
-permission to stat.
+Same shape as the `open_for_reading()` defect, in a different namespace: the caller cannot
+tell a missing file from one it lacks permission to stat. `key::last_status()` is the pattern
+to copy.
 
 **How insti works around it:** `probe_path()`, a three-valued probe that calls
 `GetFileAttributesW` directly and inspects the error. Note the measurement, since the obvious
@@ -203,9 +174,8 @@ recording one it cannot restore faithfully (`shared/src/actions/service_action.c
 
 ## Fix order
 
-**1 → 2 → 3 → 4** is one piece of work, not four: item 1 is the primitive that 2 and 3 need,
-and 4 is the enumeration half of 3. Fixing any one alone leaves the same defect reachable
-through the others.
+**2 → 3 → 4** is one piece of work, not three: 4 is the enumeration half of 3, and both rest
+on `key::last_status()`. Fixing one alone leaves the same defect reachable through the others.
 
 **5, 6 and 7 are independent** and can go in any order.
 
