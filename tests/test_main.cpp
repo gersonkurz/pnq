@@ -1897,6 +1897,71 @@ TEST_CASE("registry::key live access", "[registry]") {
     }
 }
 
+TEST_CASE("registry::enumerator last_status", "[registry]") {
+    using pnq::regis3::key;
+
+    const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_enum_status_" + std::to_string(GetCurrentProcessId());
+
+    SECTION("a finished enumeration ends with ERROR_NO_MORE_ITEMS") {
+        {
+            key parent(test_path);
+            REQUIRE(parent.open_for_writing());
+            REQUIRE(parent.set_string("Val", "v"));
+
+            key child(test_path + "\\Child");
+            REQUIRE(child.open_for_writing());
+        }
+
+        key reader(test_path);
+        REQUIRE(reader.open_for_reading());
+
+        auto subkeys = reader.enum_keys();
+        int keys = 0;
+        for (const auto& path : subkeys) {
+            (void)path;
+            ++keys;
+        }
+        CHECK(keys == 1);
+        CHECK(subkeys.last_status() == ERROR_NO_MORE_ITEMS);
+
+        auto values = reader.enum_values();
+        int vals = 0;
+        for (const auto& v : values) {
+            (void)v;
+            ++vals;
+        }
+        CHECK(vals == 1);
+        CHECK(values.last_status() == ERROR_NO_MORE_ITEMS);
+
+        reader.close();
+        REQUIRE(key::delete_recursive(test_path));
+    }
+
+    SECTION("a truncated enumeration does not look finished") {
+        // Deleting a key out from under an open handle makes RegEnumKeyEx fail rather than
+        // report end-of-enumeration - the one truncation we can provoke without elevation.
+        {
+            key parent(test_path);
+            REQUIRE(parent.open_for_writing());
+            key child(test_path + "\\Child");
+            REQUIRE(child.open_for_writing());
+        }
+
+        key reader(test_path);
+        REQUIRE(reader.open_for_reading());
+        REQUIRE(key::delete_recursive(test_path));
+
+        auto subkeys = reader.enum_keys();
+        int keys = 0;
+        for (const auto& path : subkeys) {
+            (void)path;
+            ++keys;
+        }
+        CHECK(keys == 0);  // looks exactly like an empty key...
+        CHECK(subkeys.last_status() != ERROR_NO_MORE_ITEMS);  // ...but it was not one
+    }
+}
+
 TEST_CASE("registry::take_ownership_and_delete", "[registry][!mayfail]") {
     using pnq::regis3::key;
 
@@ -2245,6 +2310,76 @@ TEST_CASE("registry::importer", "[registry]") {
         REQUIRE_FALSE(result->has_keys());
 
         result->release();
+    }
+
+    SECTION("registry_importer reports a partial subtree") {
+        // A readable parent with one readable and one unreadable child. The old code created an
+        // empty entry for the unreadable one, which is indistinguishable from a key that really
+        // is empty.
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_importer_partial_" + std::to_string(GetCurrentProcessId());
+        {
+            key parent(test_path);
+            REQUIRE(parent.open_for_writing());
+            REQUIRE(parent.set_string("ParentVal", "parent"));
+
+            key visible(test_path + "\\Visible");
+            REQUIRE(visible.open_for_writing());
+            REQUIRE(visible.set_string("VisibleVal", "visible"));
+
+            key hidden(test_path + "\\Hidden");
+            REQUIRE(hidden.open_for_writing());
+            REQUIRE(hidden.set_string("HiddenVal", "hidden"));
+        }
+        deny_read_access(test_path + "\\Hidden");
+
+        // Lenient (the default): partial tree, and it admits to being partial
+        {
+            registry_importer importer(test_path);
+            key_entry* result = importer.import();
+            REQUIRE(result != nullptr);
+            CHECK_FALSE(importer.was_complete());
+
+            CHECK(result->keys().find("visible") != result->keys().end());
+            // Omitted, not forged as an empty key
+            CHECK(result->keys().find("hidden") == result->keys().end());
+
+            result->release();
+        }
+
+        // Strict: the whole import fails
+        {
+            registry_importer importer(test_path, pnq::regis3::import_options::require_complete_import);
+            CHECK(importer.import() == nullptr);
+            CHECK_FALSE(importer.was_complete());
+        }
+
+        REQUIRE(key::set_permissive_sddl(test_path + "\\Hidden"));
+        REQUIRE(key::delete_recursive(test_path));
+    }
+
+    SECTION("registry_importer reports a complete subtree as complete") {
+        const std::string test_path = "HKEY_CURRENT_USER\\Software\\pnq_importer_complete_" + std::to_string(GetCurrentProcessId());
+        {
+            key parent(test_path);
+            REQUIRE(parent.open_for_writing());
+            REQUIRE(parent.set_string("Val", "v"));
+
+            key child(test_path + "\\Child");
+            REQUIRE(child.open_for_writing());
+            REQUIRE(child.set_string("ChildVal", "c"));
+        }
+
+        // Both policies agree when everything is readable
+        for (auto options : {pnq::regis3::import_options::none, pnq::regis3::import_options::require_complete_import}) {
+            registry_importer importer(test_path, options);
+            key_entry* result = importer.import();
+            REQUIRE(result != nullptr);
+            CHECK(importer.was_complete());
+            CHECK(result->keys().find("child") != result->keys().end());
+            result->release();
+        }
+
+        REQUIRE(key::delete_recursive(test_path));
     }
 
     SECTION("registry_importer fails on an unreadable key") {

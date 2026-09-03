@@ -179,9 +179,13 @@ namespace pnq
 
             /// Create importer for the given registry path.
             /// @param root_path Full registry path (e.g., "HKEY_CURRENT_USER\\Software\\MyApp")
-            explicit registry_importer(std::string_view root_path)
+            /// @param options Pass require_complete_import to fail instead of returning a
+            ///        partial tree when part of the subtree cannot be read
+            explicit registry_importer(std::string_view root_path, import_options options = import_options::none)
                 : m_root_path{root_path},
-                  m_result{nullptr}
+                  m_options{options},
+                  m_result{nullptr},
+                  m_complete{true}
             {
             }
 
@@ -193,9 +197,20 @@ namespace pnq
                 }
             }
 
+            /// Did the last import see the whole subtree?
+            /// False means at least one subkey was unreadable or an enumeration was truncated,
+            /// so the returned tree is a subset of what is actually in the registry. The tree
+            /// omits what it could not read rather than inventing empty keys for it.
+            bool was_complete() const
+            {
+                return m_complete;
+            }
+
             /// Import from the live registry.
             /// An absent root key is not a failure: it yields an empty tree. A root key that
-            /// exists but cannot be read is a failure and yields nullptr.
+            /// exists but cannot be read is a failure and yields nullptr. Parts of the subtree
+            /// that cannot be read are skipped and reported by was_complete(), unless
+            /// require_complete_import was given, in which case they fail the import.
             /// @return Root key entry (caller must release), or nullptr on failure
             key_entry* import() override
             {
@@ -206,6 +221,7 @@ namespace pnq
                 }
 
                 // Create root entry
+                m_complete = true;
                 m_result = PNQ_NEW key_entry{nullptr, m_root_path};
 
                 // Open the registry key
@@ -231,6 +247,14 @@ namespace pnq
                 // Import recursively
                 import_recursive(m_result, reg_key);
 
+                if (!m_complete && has_flag(m_options, import_options::require_complete_import))
+                {
+                    PNQ_LOG_ERROR("import of '{}' is incomplete and require_complete_import was requested", m_root_path);
+                    PNQ_RELEASE(m_result);
+                    m_result = nullptr;
+                    return nullptr;
+                }
+
                 PNQ_ADDREF(m_result);
                 return m_result;
             }
@@ -239,22 +263,33 @@ namespace pnq
             void import_recursive(key_entry* parent, key& reg_key)
             {
                 // Import all subkeys
-                for (const auto& subkey_path : reg_key.enum_keys())
+                key_enumerator subkeys = reg_key.enum_keys();
+                for (const auto& subkey_path : subkeys)
                 {
+                    key subkey{subkey_path};
+                    if (!subkey.open_for_reading())
+                    {
+                        // Deliberately do not add an entry: an empty key is a legitimate thing
+                        // for a registry to contain, so creating one here would forge content
+                        // we were never able to read.
+                        m_complete = false;
+                        continue;
+                    }
+
                     // Extract just the name from the full path
                     std::string subkey_name{string::split_at_last_occurence(subkey_path, '\\').second};
+                    import_recursive(parent->find_or_create_key(subkey_name), subkey);
+                }
 
-                    key_entry* entry = parent->find_or_create_key(subkey_name);
-
-                    key subkey{subkey_path};
-                    if (subkey.open_for_reading())
-                    {
-                        import_recursive(entry, subkey);
-                    }
+                // A truncated enumeration looks exactly like a finished one to the loop above
+                if (subkeys.last_status() != ERROR_NO_MORE_ITEMS)
+                {
+                    m_complete = false;
                 }
 
                 // Import all values
-                for (const auto& val : reg_key.enum_values())
+                value_enumerator values = reg_key.enum_values();
+                for (const auto& val : values)
                 {
                     if (val.is_default_value())
                     {
@@ -266,10 +301,17 @@ namespace pnq
                         *entry_val = val;
                     }
                 }
+
+                if (values.last_status() != ERROR_NO_MORE_ITEMS)
+                {
+                    m_complete = false;
+                }
             }
 
             std::string m_root_path;
+            import_options m_options;
             key_entry* m_result;
+            bool m_complete;
         };
 
     } // namespace regis3

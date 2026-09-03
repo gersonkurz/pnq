@@ -111,6 +111,11 @@ namespace pnq
             /// Allow variable names for non-string variables.
             /// Enables syntax like: "value"=dword:$$VARIABLE$$
             allow_variable_names_for_non_string_variables = 8,
+
+            /// Live registry only: fail the whole import if any part of the subtree could not
+            /// be read. Without it an unreadable subkey is skipped and the import succeeds with
+            /// a partial tree - ask registry_importer::was_complete() to find out.
+            require_complete_import = 16,
         };
 
         /// Bitwise OR for import_options.
